@@ -5,6 +5,7 @@
 #include <SDL_ttf.h>
 #include <string>
 #include <memory>
+#include <unordered_map>
 namespace xs {
 class View {
 public:
@@ -23,6 +24,10 @@ public:
 private:
     TTF_Font *small=nullptr,*large=nullptr,*heading=nullptr;
     std::unique_ptr<Artwork> images;
+    // Texturas de texto ya renderizadas: evita volver a rasterizar el mismo texto en cada redibujado.
+    struct CachedText {SDL_Texture* texture;int w,h;};
+    std::unordered_map<std::string,CachedText> text_cache;
+    void clear_text_cache();
     void text(int x,int y,const std::string& message,SDL_Color color,int width=1160,TTF_Font* type=nullptr,int max_height=0);
     void rect(SDL_Rect r,SDL_Color color);
     void background();void brand(int x,int y,bool big=false);

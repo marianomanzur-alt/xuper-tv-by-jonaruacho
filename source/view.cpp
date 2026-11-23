@@ -21,14 +21,35 @@ bool View::open(std::string& error){
     images=std::make_unique<Artwork>(renderer);trace("view:ready");return true;
 }
 void View::rect(SDL_Rect r,SDL_Color c){SDL_SetRenderDrawColor(renderer,c.r,c.g,c.b,c.a);SDL_RenderFillRect(renderer,&r);}
+void View::clear_text_cache(){
+    for(auto& item:text_cache)if(item.second.texture)SDL_DestroyTexture(item.second.texture);
+    text_cache.clear();
+}
 void View::text(int x,int y,const std::string& value,SDL_Color color,int width,TTF_Font* type,int max_height){
     if(value.empty()||width<=0)return;
-    auto* s=TTF_RenderUTF8_Blended_Wrapped(type?type:font,value.c_str(),color,width);if(!s)return;
-    auto* t=SDL_CreateTextureFromSurface(renderer,s);SDL_Rect dst{x,y,s->w,s->h};
-    if(t){if(max_height>0){SDL_Rect clip{x,y,width,max_height};SDL_RenderSetClipRect(renderer,&clip);}SDL_RenderCopy(renderer,t,nullptr,&dst);SDL_RenderSetClipRect(renderer,nullptr);SDL_DestroyTexture(t);}SDL_FreeSurface(s);
+    TTF_Font* face=type?type:font;
+    char head[64];std::snprintf(head,sizeof(head),"%p|%d|%02x%02x%02x%02x|",static_cast<void*>(face),width,color.r,color.g,color.b,color.a);
+    const std::string key=std::string(head)+value;
+    auto found=text_cache.find(key);
+    if(found==text_cache.end()){
+        auto* s=TTF_RenderUTF8_Blended_Wrapped(face,value.c_str(),color,width);if(!s)return;
+        auto* t=SDL_CreateTextureFromSurface(renderer,s);const int w=s->w,h=s->h;SDL_FreeSurface(s);
+        if(!t)return;
+        if(text_cache.size()>=400)clear_text_cache();
+        found=text_cache.emplace(key,CachedText{t,w,h}).first;
+    }
+    SDL_Rect dst{x,y,found->second.w,found->second.h};
+    if(max_height>0){SDL_Rect clip{x,y,width,max_height};SDL_RenderSetClipRect(renderer,&clip);}
+    SDL_RenderCopy(renderer,found->second.texture,nullptr,&dst);SDL_RenderSetClipRect(renderer,nullptr);
 }
 void View::background(){
-    for(int y=0;y<720;++y){const auto r=static_cast<Uint8>(10+y*5/720),g=static_cast<Uint8>(15+y*7/720),b=static_cast<Uint8>(26+y*13/720);SDL_SetRenderDrawColor(renderer,r,g,b,255);SDL_RenderDrawLine(renderer,0,y,1280,y);}
+    // Mismo degradado de 720 lineas, pero dibujado como bandas del mismo color (unas 15 llamadas).
+    auto at=[](int y){return SDL_Color{static_cast<Uint8>(10+y*5/720),static_cast<Uint8>(15+y*7/720),static_cast<Uint8>(26+y*13/720),255};};
+    int band=0;SDL_Color current=at(0);
+    for(int y=1;y<=720;++y){
+        const SDL_Color next=y<720?at(y):SDL_Color{0,0,0,0};
+        if(y==720||next.r!=current.r||next.g!=current.g||next.b!=current.b){rect({0,band,1280,y-band},current);band=y;current=next;}
+    }
 }
 void View::brand(int x,int y,bool big){
     const int n=big?56:32;rect({x,y,n,n},accent);text(x+(big?10:6),y+(big?-2:-1),"X",{10,20,29,255},n,big?large:heading);
@@ -105,7 +126,7 @@ void View::donation(){
     text(900,565,"MERCADO PAGO",accent,300,small);text(76,680,"B / A / Y  Continuar a la app",white,900,small);SDL_RenderPresent(renderer);
 }
 void View::close(){
-    images.reset();for(auto** f:{&font,&small,&large,&heading})if(*f){TTF_CloseFont(*f);*f=nullptr;}
+    clear_text_cache();images.reset();for(auto** f:{&font,&small,&large,&heading})if(*f){TTF_CloseFont(*f);*f=nullptr;}
     if(renderer){SDL_DestroyRenderer(renderer);renderer=nullptr;}if(window){SDL_DestroyWindow(window);window=nullptr;}if(TTF_WasInit())TTF_Quit();if(SDL_WasInit(SDL_INIT_VIDEO))SDL_Quit();
 }
 }

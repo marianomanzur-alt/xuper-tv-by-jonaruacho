@@ -29,5 +29,20 @@ int main(){
     xs::PlaybackHistory bounds(path);assert(bounds.position("bad")==0&&bounds.position("future")==0&&bounds.speed==0.5&&bounds.volume==100);
     for(int i=0;i<510;++i)bounds.positions[std::to_string(i)]=20;
     assert(bounds.save("last",50,1,100,true,false)&&bounds.positions.size()<=500);
+    {   // preferencias recordadas: subtitulos por contenido/serie, idiomas, tamano y calidad
+        xs::PlaybackHistory prefs(path);prefs.sub_scale=1.4;prefs.quality=2;prefs.alang="eng";prefs.slang="spa";
+        prefs.remember_subtitle("ep1","serieA","sdmc:/subs/serieA.S01E01.srt");
+        prefs.remember_subtitle("ep2","","sdmc:/subs/pelicula.srt");
+        assert(prefs.save("ep1",30,1,100,true,false));
+        xs::PlaybackHistory again(path);
+        assert(std::abs(again.sub_scale-1.4)<1e-9&&again.quality==2&&again.alang=="eng"&&again.slang=="spa");
+        assert(again.subtitle_for("ep1")=="sdmc:/subs/serieA.S01E01.srt"&&again.series_hint("serieA")=="sdmc:/subs/serieA.S01E01.srt");
+        assert(again.subtitle_for("ep2")=="sdmc:/subs/pelicula.srt"&&again.series_hint("")=="");
+        again.remember_subtitle("ep1","serieA","");assert(again.subtitle_for("ep1").empty()&&!again.series_hint("serieA").empty());
+        {std::ofstream file(path);file<<R"({"sub_scale":99,"quality":7,"alang":"x","slang":"es pa","subtitle_files":{"a":"ok.srt","b":5,"c":"mal\u0001"},"series_subtitles":[1]})";}
+        xs::PlaybackHistory hostile(path);
+        assert(hostile.sub_scale==3.0&&hostile.quality==2&&hostile.alang.empty()&&hostile.slang.empty());
+        assert(hostile.subtitle_for("a")=="ok.srt"&&hostile.subtitle_for("b").empty()&&hostile.subtitle_for("c").empty()&&hostile.series_subtitles.empty());
+    }
     std::filesystem::remove_all(directory);std::cout<<"playback state: resume, completion, preferences, malformed file and bounds passed\n";
 }

@@ -93,7 +93,7 @@ int main(int argc,char** argv){
         cancel_task=false;task_done=0;task_total=0;std::atomic<bool> complete{false};
         const auto started=SDL_GetTicks();if(splash)view.splash(message);
         std::thread worker([&]{task();complete.store(true);});
-        while(!complete.load()||(splash&&SDL_GetTicks()-started<1100)){
+        while(!complete.load()||(splash&&SDL_GetTicks()-started<300)){
             SDL_Event e;while(SDL_PollEvent(&e)){if(e.type==SDL_QUIT){running=false;cancel_task=true;}if(e.type==SDL_KEYDOWN&&(e.key.keysym.sym==SDLK_ESCAPE||e.key.keysym.sym==SDLK_b))cancel_task=true;}
 #ifdef __SWITCH__
             if(!appletMainLoop()){running=false;cancel_task=true;}padUpdate(&pad);if(padGetButtonsDown(&pad)&HidNpadButton_B)cancel_task=true;
@@ -252,6 +252,10 @@ int main(int argc,char** argv){
                         std::string source=current.source;std::vector<std::pair<std::string,std::string>> headers;
                         xs::PlaybackOptions options;options.font=view.font;options.title=current.title;
                         options.variant=variant;options.start=start>0?start:current.kind==xs::EntryKind::Episode?playback_history.position(current.content_id):0;options.speed=speed;options.volume=volume;options.auto_next=auto_next;options.paused=keep_paused;
+                        options.sub_scale=playback_history.sub_scale;options.quality=playback_history.quality;options.buffer_mb=full_memory?64:32;
+                        options.alang=playback_history.alang;options.slang=playback_history.slang;
+                        {const std::string& series_key=current.series_id.empty()?current.content_id:current.series_id;
+                         if(current.kind==xs::EntryKind::Episode){options.subtitle_file=playback_history.subtitle_for(current.content_id);options.subtitle_hint=playback_history.series_hint(series_key);}}
                         if(current.kind==xs::EntryKind::Channel||current.kind==xs::EntryKind::Episode){
                             status="Solicitando fuente del video...";view.draw(catalog,selected,status,full_memory);
                             xs::SourceResult result;xs::trace("catalog:source_begin");load([&]{result=xs::service_source(session,current,variant);},"Preparando reproduccion...");status=result.status;
@@ -267,6 +271,12 @@ int main(int argc,char** argv){
                         if(!source.empty()){
                             xs::PlaybackOutcome outcome;status=xs::play(source,view.renderer,headers,options,&outcome);xs::trace("main:video_returned");
                             speed=outcome.speed;volume=outcome.volume;auto_next=outcome.auto_next;
+                            if(status.empty()){ // si la reproduccion fallo, outcome no es confiable
+                                playback_history.sub_scale=outcome.sub_scale;playback_history.quality=outcome.quality;
+                                if(!outcome.alang.empty()&&xs::PlaybackHistory::lang_ok(outcome.alang))playback_history.alang=outcome.alang;
+                                if(!outcome.slang.empty()&&xs::PlaybackHistory::lang_ok(outcome.slang))playback_history.slang=outcome.slang;
+                                if(current.kind==xs::EntryKind::Episode)playback_history.remember_subtitle(current.content_id,current.series_id.empty()?current.content_id:current.series_id,outcome.subtitle_file);
+                            }
                             if(status.empty()&&(outcome.position>3||outcome.ended)&&!saved.remember(current))xs::trace("catalog:recent_save_failed");
                             if(status.empty()&&!playback_history.save(current.kind==xs::EntryKind::Episode?current.content_id:"",outcome.position,outcome.speed,outcome.volume,outcome.auto_next,outcome.ended))xs::trace((std::string("play:history_save_failed stage=")+playback_history.last_error).c_str());
                             if(outcome.ended&&auto_next&&!current.series_id.empty()&&static_cast<size_t>(options.item+1)<queue.size())outcome.next_item=options.item+1;

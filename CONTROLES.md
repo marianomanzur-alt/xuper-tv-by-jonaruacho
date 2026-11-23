@@ -52,3 +52,22 @@ recuerda la ultima carpeta. A abre carpeta o carga el archivo; B sube una carpet
 (en la raiz vuelve al menu de subtitulos); L/R saltan 10 filas. Ajusta el desfase
 con "Sincronia subtitulos" si hace falta. Un archivo cargado reemplaza al anterior
 cargado por este medio o por el servicio.
+
+## Novedades de manejo y velocidad
+
+- Toque en el reproductor: la barra de progreso salta a ese punto; la mitad superior
+  abre el menu; el centro pausa (si los controles estan ocultos, primero los muestra).
+  En el menu, tocar una fila la elige; tocar arriba vuelve.
+- Calidad de imagen (menu > Calidad de imagen): 640x360 (rapida), 854x480 o 960x540.
+  Se recuerda entre videos. Si la consola va a tirones, vuelve a 640x360.
+- Se recuerdan entre videos: tamano de subtitulos, idioma de audio y de subtitulos
+  internos elegidos (si desactivas los subtitulos, tampoco se activaran solos) y, por
+  episodio, el archivo de la SD que cargaste (se vuelve a cargar solo al reabrirlo).
+  En series, el explorador de la SD abre la carpeta del ultimo archivo usado y deja el
+  cursor en el siguiente.
+- Busqueda mas rapida: la lista de canales de TV se guarda en
+  sdmc:/switch/xuperswitch/channel_cache.json (valida 12 horas). La primera busqueda
+  del dia sigue consultando el servicio; las siguientes, tambien tras reiniciar la app,
+  usan la SD. Borra ese archivo para forzar una actualizacion.
+- Las portadas se descargan con 3 hilos y el buffer de red sube a 64 MB cuando la
+  app corre con memoria completa. La pantalla de carga ya no fuerza 1,1 s de espera.

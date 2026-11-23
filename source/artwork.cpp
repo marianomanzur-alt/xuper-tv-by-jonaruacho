@@ -13,6 +13,7 @@
 #include <deque>
 #include <map>
 #include <set>
+#include <vector>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <algorithm>
@@ -64,20 +65,23 @@ static SDL_Surface* decode(const std::string& bytes){
     }return surface;
 }
 static void trim_cache(){
+    static std::mutex trim_lock;std::lock_guard<std::mutex> guard(trim_lock);
     DIR* d=opendir(directory);if(!d)return;struct Item{std::string path;time_t time;size_t size;};std::vector<Item> files;size_t total=0;
     while(auto* e=readdir(d)){std::string name=e->d_name;if(name.size()!=20||name.substr(16)!=".img")continue;struct stat st{};const auto p=std::string(directory)+name;if(stat(p.c_str(),&st)==0&&S_ISREG(st.st_mode)){files.push_back({p,st.st_mtime,static_cast<size_t>(st.st_size)});total+=st.st_size;}}closedir(d);
     std::sort(files.begin(),files.end(),[](const Item& a,const Item& b){return a.time<b.time;});size_t count=files.size();
     for(const auto& f:files){if(total<=64*1024*1024&&count<=256)break;if(std::remove(f.path.c_str())==0){total-=f.size;--count;}}
 }
 struct Artwork::Impl {
-    SDL_Renderer* renderer;std::mutex mutex;std::condition_variable wake;bool stop=false;std::thread worker;
+    SDL_Renderer* renderer;std::mutex mutex;std::condition_variable wake;bool stop=false;std::vector<std::thread> workers;
     struct Job{std::string url,key;};struct Ready{std::string key;SDL_Surface* surface;};
     struct Texture{SDL_Texture* value;uint64_t used;};
     std::deque<Job> jobs;std::deque<Ready> ready;std::set<std::string> pending,failed;std::map<std::string,Texture> textures;uint64_t clock=0;
-    explicit Impl(SDL_Renderer* r):renderer(r){mkdir(directory,0777);worker=std::thread([this]{run();});}
+    // Varios hilos descargan portadas en paralelo; curl_global_init se llama una vez, desde el hilo principal.
+    static constexpr int worker_count=3;
+    explicit Impl(SDL_Renderer* r):renderer(r){mkdir(directory,0777);curl_global_init(CURL_GLOBAL_DEFAULT);
+        for(int i=0;i<worker_count;++i)workers.emplace_back([this]{run();});}
     static int progress(void* self,curl_off_t,curl_off_t,curl_off_t,curl_off_t){auto* p=static_cast<Impl*>(self);std::lock_guard<std::mutex> lock(p->mutex);return p->stop?1:0;}
     void run(){
-        curl_global_init(CURL_GLOBAL_DEFAULT);
         while(true){Job j;{std::unique_lock<std::mutex> lock(mutex);wake.wait(lock,[&]{return stop||!jobs.empty();});if(stop)break;j=jobs.front();jobs.pop_front();}
             std::string bytes;const auto path=std::string(directory)+j.key+".img";struct stat st{};
             if(stat(path.c_str(),&st)==0&&st.st_size>0&&static_cast<size_t>(st.st_size)<=limit&&(j.url.empty()||std::time(nullptr)-st.st_mtime<30*86400)){
@@ -103,9 +107,9 @@ struct Artwork::Impl {
                 if(surface){const auto tmp=path+".tmp";std::ofstream f(tmp,std::ios::binary);f.write(bytes.data(),bytes.size());f.close();if(f.good()){std::remove(path.c_str());std::rename(tmp.c_str(),path.c_str());}trim_cache();}
             }
             {std::lock_guard<std::mutex> lock(mutex);ready.push_back({j.key,surface});}
-        }curl_global_cleanup();
+        }
     }
-    ~Impl(){ {std::lock_guard<std::mutex> lock(mutex);stop=true;}wake.notify_all();worker.join();for(auto& p:ready)if(p.surface)SDL_FreeSurface(p.surface);for(auto& p:textures)SDL_DestroyTexture(p.second.value);}
+    ~Impl(){ {std::lock_guard<std::mutex> lock(mutex);stop=true;}wake.notify_all();for(auto& w:workers)w.join();curl_global_cleanup();for(auto& p:ready)if(p.surface)SDL_FreeSurface(p.surface);for(auto& p:textures)SDL_DestroyTexture(p.second.value);}
 };
 Artwork::Artwork(SDL_Renderer* r):impl(new Impl(r)){}
 Artwork::~Artwork()=default;

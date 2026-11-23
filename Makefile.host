@@ -46,3 +46,8 @@ test-installation:
 	@mkdir -p build-host
 	$(CXX) $(CXXFLAGS) tests/installation_test.cpp -o build-host/installation_test
 	./build-host/installation_test
+
+test-channels:
+	@mkdir -p build-host
+	$(CXX) $(CXXFLAGS) source/catalog.cpp tests/channel_cache_test.cpp -o build-host/channel_cache_test
+	cd build-host && ./channel_cache_test

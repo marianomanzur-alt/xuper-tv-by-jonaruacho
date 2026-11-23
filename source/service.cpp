@@ -3,6 +3,7 @@
 #include "ranger_codec.hpp"
 #include "trace.hpp"
 #include "installation.hpp"
+#include "channel_cache.hpp"
 #include <curl/curl.h>
 #define JSON_NOEXCEPTION 1
 #include "json.hpp"
@@ -166,7 +167,27 @@ LoginAttempt service_login(const std::string& path,const std::string& username,c
     else out.status="Acceso aceptado. Lista cargada; reproduccion pendiente de comprobar.";
     return out;
 }
-struct ServiceSession {Json config;Json common;Json identity;std::string playlist;std::map<int,Catalog> channels;std::vector<int> live_categories;};
+struct ServiceSession {Json config;Json common;Json identity;std::string playlist;std::map<int,Catalog> channels;std::vector<int> live_categories;
+    // Indice de canales persistido en la SD (ver channel_cache.hpp).
+    ChannelIndex disk_index;bool disk_loaded=false,disk_dirty=false;};
+#ifdef __SWITCH__
+static const char* const channel_cache_path="sdmc:/switch/xuperswitch/channel_cache.json";
+#else
+static const char* const channel_cache_path="channel_cache.json";
+#endif
+static constexpr long channel_cache_max_age=12*3600;
+static void load_disk_index(ServiceSession& s){
+    if(s.disk_loaded)return;
+    s.disk_loaded=true;
+    if(load_channel_index(channel_cache_path,channel_cache_max_age,s.disk_index))trace("channels:disk_index_loaded");
+}
+// Escribe el indice solo cuando cubre todas las categorias de TV y hubo datos nuevos.
+static void flush_disk_index(ServiceSession& s){
+    if(!s.disk_dirty||s.live_categories.empty())return;
+    for(int id:s.live_categories)if(!s.disk_index.count(id))return;
+    s.disk_dirty=!save_channel_index(channel_cache_path,s.disk_index);
+    trace(s.disk_dirty?"channels:disk_index_save_failed":"channels:disk_index_saved");
+}
 struct CurlScope {
     bool ready=curl_global_init(CURL_GLOBAL_DEFAULT)==CURLE_OK;
     ~CurlScope(){if(ready)curl_global_cleanup();}
@@ -492,8 +513,20 @@ BrowseResult service_root(const std::shared_ptr<ServiceSession>& s) {
 }
 BrowseResult service_channels(const std::shared_ptr<ServiceSession>& s,int id) {
     BrowseResult out;if(!s||id<0){out.status="Categoria sin sesion valida.";return out;}
-    CurlScope curl;if(!curl.ready){out.status="No se pudo iniciar cURL.";return out;}
     const auto cached=s->channels.find(id);if(cached!=s->channels.end()){out.ok=true;out.catalog=cached->second;out.status="Canales cargados.";return out;}
+    load_disk_index(*s);
+    const auto stored=s->disk_index.find(id);
+    if(stored!=s->disk_index.end()){
+        out.catalog.entries=stored->second;
+        s->channels[id]=out.catalog;
+        size_t kept=0;for(const auto& c:s->channels)kept+=c.second.entries.size();
+        while(s->channels.size()>1&&(kept>12000||s->channels.size()>64)){
+            auto old=s->channels.begin();if(old->first==id)++old;kept-=old->second.entries.size();s->channels.erase(old);
+        }
+        out.ok=true;out.status=std::to_string(out.catalog.entries.size())+" canales. A: solicitar reproduccion; B: categorias.";
+        return out;
+    }
+    CurlScope curl;if(!curl.ready){out.status="No se pudo iniciar cURL.";return out;}
     Json payload=identity(*s);
     payload.update({{"columnId",id},{"dataVersion",""},{"pageSize",3000},{"pageNum",1},{"expireTimeStr",""}});
     Json data;if(!api_post(s->config,s->common,"/api/portalCore/v6/getLiveData",payload,data,out.status))return out;
@@ -507,6 +540,8 @@ BrowseResult service_channels(const std::shared_ptr<ServiceSession>& s,int id) {
         out.catalog.entries.push_back(std::move(e));
     }
     s->channels[id]=out.catalog;
+    s->disk_index[id]=out.catalog.entries;s->disk_dirty=true;
+    flush_disk_index(*s);
     size_t cached_count=0;for(const auto& c:s->channels)cached_count+=c.second.entries.size();
     while(s->channels.size()>1&&(cached_count>12000||s->channels.size()>64)){
         auto old=s->channels.begin();if(old->first==id)++old;cached_count-=old->second.entries.size();s->channels.erase(old);
@@ -593,6 +628,7 @@ BrowseResult service_search_all(const std::shared_ptr<ServiceSession>& s,const s
     auto vod=service_search(s,query);if(vod.ok){out.catalog.entries.insert(out.catalog.entries.end(),vod.catalog.entries.begin(),vod.catalog.entries.end());}
     else out.catalog.warnings.push_back("No se pudo consultar peliculas y series; reintenta la busqueda.");
     if(failed)out.catalog.warnings.push_back("Algunas categorias de TV no respondieron; reintenta para completar.");
+    flush_disk_index(*s);
     out.ok=vod.ok||!out.catalog.entries.empty()||(!s->live_categories.empty()&&!failed);
     out.status=std::to_string(out.catalog.entries.size())+" resultados: canales, peliculas y series.";
     if(!out.catalog.warnings.empty())out.status+=" Resultados parciales: "+out.catalog.warnings.front();
