@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <vector>
+#include <fstream>
 static void key(SDL_Keycode key){SDL_Event event{};event.type=SDL_KEYDOWN;event.key.keysym.sym=key;assert(SDL_PushEvent(&event)==1);std::this_thread::sleep_for(std::chrono::milliseconds(150));}
 static void wait(int n){std::this_thread::sleep_for(std::chrono::milliseconds(n));}
 int main(int argc,char** argv){
@@ -17,7 +18,7 @@ int main(int argc,char** argv){
     options.variants={"720p / Espanol","1080p / Ingles"};options.items={"Episodio 1","Episodio 2"};options.start=2;
     options.subtitles={"Espanol externo"};options.subtitle_loader=[](size_t,std::string& data,std::string&){data="1\n00:00:00,000 --> 00:00:25,000\nSubtitulo externo verificado\n";return true;};
     auto* renderer=view.renderer;
-    for(int scenario=0;scenario<12;++scenario){
+    for(int scenario=0;scenario<15;++scenario){
         xs::PlaybackOutcome result;
         std::thread input([scenario]{wait(600);
             if(scenario==0){key(SDLK_SPACE);wait(200);key(SDLK_SPACE);wait(200);key(SDLK_y);wait(150);key(SDLK_s);wait(150);key(SDLK_RIGHTBRACKET);wait(150);key(SDLK_f);wait(150);key(SDLK_RIGHT);wait(200);key(SDLK_LEFT);wait(200);key(SDLK_x);wait(300);key(SDLK_ESCAPE);wait(100);key(SDLK_ESCAPE);}
@@ -26,12 +27,24 @@ int main(int argc,char** argv){
             if(scenario==4){key(SDLK_SPACE);wait(200);key(SDLK_ESCAPE);}
             if(scenario==5){key(SDLK_x);wait(300);SDL_Event e{};e.type=SDL_QUIT;SDL_PushEvent(&e);}
             if(scenario==6){key(SDLK_x);wait(100);for(int i=0;i<17;++i){key(SDLK_DOWN);wait(25);}key(SDLK_RETURN);wait(100);key(SDLK_ESCAPE);wait(50);key(SDLK_ESCAPE);}
+            if(scenario==12||scenario==13){key(SDLK_x);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(400);key(SDLK_RETURN);wait(400);key(SDLK_ESCAPE);wait(100);key(SDLK_ESCAPE);}
+            if(scenario==14){key(SDLK_x);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(400);key(SDLK_ESCAPE);wait(100);key(SDLK_ESCAPE);}
             if(scenario==8){key(SDLK_x);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(200);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(300);key(SDLK_ESCAPE);}
             if(scenario==9){wait(400);key(SDLK_ESCAPE);}
             if(scenario==10){key(SDLK_x);wait(100);for(int i=0;i<18;++i){key(SDLK_DOWN);wait(25);}key(SDLK_RETURN);wait(300);key(SDLK_ESCAPE);wait(50);key(SDLK_ESCAPE);}
             if(scenario==11){wait(500);SDL_Event tap{};tap.type=SDL_FINGERDOWN;tap.tfinger.x=768.0f/1280;tap.tfinger.y=631.0f/720;SDL_PushEvent(&tap);wait(600);key(SDLK_ESCAPE);}
             if(scenario==7){key(SDLK_x);wait(100);for(int i=0;i<7;++i){key(SDLK_DOWN);wait(25);}key(SDLK_LEFT);wait(50);key(SDLK_DOWN);wait(25);key(SDLK_DOWN);wait(25);key(SDLK_RIGHT);wait(25);key(SDLK_DOWN);wait(25);key(SDLK_RIGHT);wait(25);key(SDLK_DOWN);wait(25);key(SDLK_RIGHT);wait(100);key(SDLK_ESCAPE);wait(50);key(SDLK_ESCAPE);}
         });
+        options.online_search=nullptr;options.online_loader=nullptr;
+        if(scenario>=12){
+            options.online_search=[scenario](std::vector<std::string>& labels,std::string& problem){
+                if(scenario==14){problem="OpenSubtitles: sin resultados | SubDL: sin resultados";return false;}
+                labels={"[OS] Es  Show.S01E02  (500)","[SubDL] En  Show"};return true;};
+            options.online_loader=[scenario](size_t i,std::string& data,std::string& saved){
+                if(i!=0)return false;
+                data="1\n00:00:00,000 --> 00:00:25,000\nSubtitulo de internet\n";
+                if(scenario==12){std::ofstream("/tmp/xs_online_sub.srt",std::ios::binary|std::ios::trunc)<<data;saved="/tmp/xs_online_sub.srt";}
+                return true;};}
         options.subtitle_file=scenario==9?"./subtitulos/ejemplo.srt":"";options.quality=scenario==9?2:0;options.start=scenario==11?0:2;
         error=xs::play(argv[1],renderer,{},options,&result);input.join();
         if(!error.empty())std::cerr<<error<<'\n';
@@ -49,6 +62,9 @@ int main(int argc,char** argv){
         if(scenario==9){assert(result.subtitle_file=="./subtitulos/ejemplo.srt");assert(result.subtitle==2);assert(result.quality==2);}
         if(scenario==10)assert(result.quality==1);
         if(scenario==11)assert(result.position>10);   // toque a mitad de la barra: salto hacia ~15 s de 30
+        if(scenario==12){assert(result.subtitle_file=="/tmp/xs_online_sub.srt");assert(result.subtitle==2);}
+        if(scenario==13){assert(result.subtitle_file.empty());assert(result.subtitle==2);}
+        if(scenario==14){assert(result.subtitle_file.empty());assert(result.subtitle!=2);}
         if(scenario==0)assert(result.alang=="eng");   // Y cambia a la pista en ingles y se recuerda su idioma
         std::cout<<"controls scenario "<<scenario<<" passed; aid="<<result.audio<<" sid="<<result.subtitle<<" speed="<<result.speed<<" position="<<result.position<<std::endl;
     }

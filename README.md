@@ -16,6 +16,10 @@ no necesitas compilar ni configurar desde una APK para este paquete.
 - TV en vivo, peliculas, series y buscador unificado.
 - Interfaz con categorias, logos y portadas PNG/JPEG/WebP en cache.
 - Favoritos persistentes, continuar viendo y opciones de reproduccion.
+- Descargas: guarda peliculas y episodios en la SD (con sus subtitulos) y reproducelos
+  sin conexion. Consulta [DESCARGAS.md](DESCARGAS.md).
+- **Buscar subtitulos en internet** (Menu > Subtitulos): OpenSubtitles y SubDL con respaldo
+  si una no tiene resultados. Consulta [LEEME-SUBTITULOS.txt](LEEME-SUBTITULOS.txt).
 - Audio, subtitulos, fuentes/calidades y navegacion de episodios segun los
   datos y formatos compatibles que entregue el servicio.
 - Apoyo voluntario: [Mercado Pago](https://link.mercadopago.com.mx/xuperbyjonaruacho).

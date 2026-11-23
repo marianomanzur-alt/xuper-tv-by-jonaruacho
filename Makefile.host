@@ -4,7 +4,7 @@ MBEDTLS_CFLAGS ?=
 MBEDTLS_LIBS ?= -lmbedcrypto
 CURL_CFLAGS ?=
 CURL_LIBS ?= -lcurl
-.PHONY: test test-service test-ranger test-state player clean
+.PHONY: test-subtitles test test-service test-ranger test-state test-downloads test-offline player clean
 test:
 	@mkdir -p build-host
 	$(CXX) $(CXXFLAGS) source/catalog.cpp tests/catalog_test.cpp -o build-host/catalog_test
@@ -22,8 +22,8 @@ test-service:
 	python tests/test_ranger_service.py build-host/service_probe
 player:
 	@mkdir -p build-host
-	$(CXX) $(CXXFLAGS) $(MBEDTLS_CFLAGS) $(CURL_CFLAGS) source/main.cpp source/catalog.cpp source/player.cpp source/view.cpp source/trace.cpp source/codec.cpp source/ranger_codec.cpp source/service.cpp source/artwork.cpp \
-	    $$(pkg-config --cflags --libs sdl2 SDL2_ttf mpv) $(MBEDTLS_LIBS) $(CURL_LIBS) -lpng16 -ljpeg -lwebp -pthread -o build-host/xuperswitch
+	$(CXX) $(CXXFLAGS) $(MBEDTLS_CFLAGS) $(CURL_CFLAGS) source/main.cpp source/catalog.cpp source/player.cpp source/view.cpp source/trace.cpp source/codec.cpp source/ranger_codec.cpp source/service.cpp source/artwork.cpp source/downloader.cpp source/download_manager.cpp source/subtitle_search.cpp \
+	    $$(pkg-config --cflags --libs sdl2 SDL2_ttf mpv) $(MBEDTLS_LIBS) $(CURL_LIBS) -lpng16 -ljpeg -lwebp -lz -pthread -o build-host/xuperswitch
 clean:
 	rm -rf build-host
 
@@ -51,3 +51,25 @@ test-channels:
 	@mkdir -p build-host
 	$(CXX) $(CXXFLAGS) source/catalog.cpp tests/channel_cache_test.cpp -o build-host/channel_cache_test
 	cd build-host && ./channel_cache_test
+
+test-offline:
+	@mkdir -p build-host
+	$(CXX) $(CXXFLAGS) source/catalog.cpp tests/offline_library_test.cpp -o build-host/offline_library_test
+	./build-host/offline_library_test
+
+test-downloads:
+	@mkdir -p build-host
+	$(CXX) $(CXXFLAGS) $(CURL_CFLAGS) source/catalog.cpp source/downloader.cpp tests/download_probe.cpp $(CURL_LIBS) -pthread -o build-host/download_probe
+	$(CXX) $(CXXFLAGS) $(CURL_CFLAGS) source/catalog.cpp source/downloader.cpp source/download_manager.cpp tests/manager_probe.cpp $(CURL_LIBS) -pthread -o build-host/manager_probe
+	python3 tests/test_downloads.py build-host/download_probe build-host/manager_probe
+
+test-offline-app:
+	@mkdir -p build-host
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -Werror -DXUPERSWITCH_TEST -Iinclude -Iinclude/vendor $(MBEDTLS_CFLAGS) $(CURL_CFLAGS) tests/offline_app_smoke.cpp source/catalog.cpp source/player.cpp source/view.cpp source/trace.cpp source/codec.cpp source/ranger_codec.cpp source/service.cpp source/artwork.cpp source/downloader.cpp source/download_manager.cpp source/subtitle_search.cpp \
+	    $$(pkg-config --cflags --libs sdl2 SDL2_ttf mpv) $(MBEDTLS_LIBS) $(CURL_LIBS) -lpng16 -ljpeg -lwebp -lz -pthread -o build-host/offline_app_smoke
+	python3 tests/test_offline_app.py build-host/offline_app_smoke
+
+test-subtitles:
+	@mkdir -p build-host
+	$(CXX) $(CXXFLAGS) $(CURL_CFLAGS) source/subtitle_search.cpp tests/subtitle_probe.cpp $(CURL_LIBS) -lz -o build-host/subtitle_probe
+	python3 tests/test_subtitles.py build-host/subtitle_probe

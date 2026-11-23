@@ -47,6 +47,7 @@ S=subtitulos, [ y ]=velocidad, F=pantalla, M=silencio, J/L=60 s,
 PageUp/PageDown=episodio anterior/siguiente.
 
 Subtitulos desde la SD: Menu > Subtitulos > "Buscar archivo en la consola (SD)...".
+Subtitulos desde internet: Menu > Subtitulos > "Buscar subtitulos en internet..." (OpenSubtitles y SubDL con respaldo; ver LEEME-SUBTITULOS.txt).
 Abre en sdmc:/switch/xuperswitch/subtitulos si existe (si no, en la raiz de la SD) y
 recuerda la ultima carpeta. A abre carpeta o carga el archivo; B sube una carpeta
 (en la raiz vuelve al menu de subtitulos); L/R saltan 10 filas. Ajusta el desfase
@@ -71,3 +72,18 @@ cargado por este medio o por el servicio.
   usan la SD. Borra ese archivo para forzar una actualizacion.
 - Las portadas se descargan con 3 hilos y el buffer de red sube a 64 MB cuando la
   app corre con memoria completa. La pantalla de carga ya no fuerza 1,1 s de espera.
+
+## Descargas para ver sin conexion
+
+Mas detalle en DESCARGAS.md.
+
+- Abre una pelicula o serie (A) y, sobre el episodio o "Reproducir: ...", pulsa **ZR**
+  para guardarlo en la SD. **L3** (stick izquierdo) descarga ese episodio y todos los
+  siguientes de la serie. En PC: G y H.
+- El avance se ve arriba a la derecha; cada tarjeta muestra DESCARGADO / DESCARGANDO / EN COLA / ERROR.
+- Menu lateral y tarjeta de Inicio: **Descargas**. A reproduce desde la SD aunque no haya
+  conexion; ZR cancela lo que se esta bajando o, pulsado dos veces, borra lo guardado.
+- Si un contenido esta descargado, tambien se reproduce desde la SD al abrirlo desde el catalogo.
+- Los subtitulos del servicio se guardan con el video; aparecen en Menu > Subtitulos.
+- Mientras se reproduce un video las descargas se pausan y se reanudan solas.
+- Sin conexion, la app abre en un inicio reducido: Descargas, Continuar viendo y Apoyar.

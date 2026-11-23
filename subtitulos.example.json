@@ -1,0 +1,11 @@
+{
+  "idiomas": ["es", "en"],
+  "opensubtitles": {
+    "api_key": "PEGA_AQUI_LA_CLAVE_DE_OPENSUBTITLES",
+    "usuario": "",
+    "clave": ""
+  },
+  "subdl": {
+    "api_key": "PEGA_AQUI_LA_CLAVE_DE_SUBDL"
+  }
+}

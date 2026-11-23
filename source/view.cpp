@@ -4,8 +4,8 @@
 #include <algorithm>
 namespace xs {
 static constexpr SDL_Color white{238,242,250,255},muted{150,163,185,255},accent{83,225,199,255},panel{24,32,49,255},gold{255,207,113,255};
-static const char* nav[]={"Inicio","TV en vivo","Peliculas","Series","Favoritos","Apoyar"};
-static const char* label(EntryKind kind,const std::string& type){switch(kind){case EntryKind::Channel:return "EN VIVO";case EntryKind::Asset:return type=="0"?"SERIE":"PELICULA";case EntryKind::Episode:return "REPRODUCIR";case EntryKind::VodPage:case EntryKind::SearchPage:return "SIGUIENTE PAGINA";case EntryKind::Category:case EntryKind::VodCategory:return "CATEGORIA";default:return "EXPLORAR";}}
+static const char* nav[]={"Inicio","TV en vivo","Peliculas","Series","Favoritos","Descargas","Apoyar"};
+static const char* label(EntryKind kind,const std::string& type){switch(kind){case EntryKind::Channel:return "EN VIVO";case EntryKind::Asset:return type=="0"?"SERIE":"PELICULA";case EntryKind::Episode:return "REPRODUCIR";case EntryKind::VodPage:case EntryKind::SearchPage:return "SIGUIENTE PAGINA";case EntryKind::Category:case EntryKind::VodCategory:return "CATEGORIA";case EntryKind::Offline:return "DESCARGADO";default:return "EXPLORAR";}}
 bool View::open(std::string& error){
     trace("view:init");if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_EVENTS)!=0){error=SDL_GetError();return false;}if(TTF_Init()!=0){error=TTF_GetError();return false;}
     window=SDL_CreateWindow("XuperSwitch by Jona Ruacho",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,1280,720,SDL_WINDOW_RESIZABLE);
@@ -73,11 +73,12 @@ bool View::image(const std::string& url,const std::string& key,SDL_Rect bounds){
 }
 void View::draw(const Catalog& c,size_t selected,const std::string& status,bool full_memory){
     poll_images();background();rect({0,0,240,720},{13,20,32,255});rect({239,0,1,720},{32,43,61,255});brand(24,30);
-    for(int i=0;i<6;++i){const int y=150+i*64;const bool focus=nav_focus==i;rect({16,y,207,50},focus?accent:active_nav==i?SDL_Color{29,51,58,255}:SDL_Color{13,20,32,255});
+    for(int i=0;i<7;++i){const int y=150+i*64;const bool focus=nav_focus==i;rect({16,y,207,50},focus?accent:active_nav==i?SDL_Color{29,51,58,255}:SDL_Color{13,20,32,255});
         text(32,y+11,nav[i],focus?SDL_Color{10,22,30,255}:active_nav==i?accent:muted,180,font,32);}
     text(26,632,"Jona Ruacho",white,190,small);text(26,658,"Version 0.14.1",muted,190,small);
     text(278,25,c.title.empty()?"Explorar":c.title,white,950,heading,44);
-    text(280,72,full_memory?"TV EN VIVO   /   PELICULAS   /   SERIES":"Modo Album: abre con R sobre un juego para reproducir.",full_memory?muted:gold,950,small,28);
+    if(!overlay.empty()){text(560,72,overlay,gold,700,small,28);text(280,72,"TV / PELICULAS / SERIES",muted,270,small,28);}
+    else text(280,72,full_memory?"TV EN VIVO   /   PELICULAS   /   SERIES":"Modo Album: abre con R sobre un juego para reproducir.",full_memory?muted:gold,950,small,28);
     int top=132;
     if(detail(c)){
         rect({278,112,100,138},panel);image(c.artwork,c.artwork_cache,{282,116,92,130});text(398,119,"LISTO PARA VER",accent,800,small);
@@ -92,25 +93,27 @@ void View::draw(const Catalog& c,size_t selected,const std::string& status,bool 
         const int art_h=poster?h-63:channel?h-53:detail(c)?68:128;
         rect({x+6,y+6,w-12,art_h},{18,26,40,255});
         if(e.artwork_cache.empty()||!image(e.artwork,e.artwork_cache,{x+10,y+9,w-20,art_h-6})){
-            const char* icon=poster?(e.program_type=="0"?"SERIES":"CINE"):channel?"TV":e.kind==EntryKind::Donation?"+":e.kind==EntryKind::Favorites?"*":e.kind==EntryKind::Resume?">":e.kind==EntryKind::SearchAction?"?":e.kind==EntryKind::Section?(e.program_type=="0"?"SERIES":"CINE"):e.kind==EntryKind::LiveSection?"EN VIVO":e.kind==EntryKind::Episode?">":"+";
+            const char* icon=poster?(e.program_type=="0"?"SERIES":"CINE"):channel?"TV":e.kind==EntryKind::Donation?"+":e.kind==EntryKind::Favorites?"*":e.kind==EntryKind::Resume?">":e.kind==EntryKind::SearchAction?"?":e.kind==EntryKind::Section?(e.program_type=="0"?"SERIES":"CINE"):e.kind==EntryKind::LiveSection?"EN VIVO":e.kind==EntryKind::Episode||e.kind==EntryKind::Offline?">":e.kind==EntryKind::Downloads?"DESCARGAS":"+";
             text(x+16,y+std::max(12,(art_h-36)/2),icon,chosen?accent:muted,w-30,heading,45);
         }
         if(poster||channel){rect({x+9,y+8,poster?80:89,22},{16,28,39,255});text(x+12,y+9,label(e.kind,e.program_type),accent,poster?80:89,small,22);}
         text(x+10,y+art_h+10,e.title,white,w-20,poster||channel?small:font,poster?47:channel?43:60);
-        if(!poster&&!channel)text(x+12,y+h-25,label(e.kind,e.program_type),muted,w-24,small,22);
+        if(!poster&&!channel){const std::string note=badge&&(e.kind==EntryKind::Episode||e.kind==EntryKind::Offline)?badge(e):std::string();
+            text(x+12,y+h-25,note.empty()?std::string(label(e.kind,e.program_type)):note,note.empty()?muted:note.rfind("ERROR",0)==0?gold:accent,w-24,small,22);}
         if(chosen&&favorite&&channel){rect({x+w-44,y+9,32,28},accent);text(x+w-38,y+8,"*",{10,25,30,255},26,font);}
     }
-    if(c.entries.empty())text(280,200,c.title=="Favoritos"?"Tus canales favoritos apareceran aqui.\nSelecciona un canal y pulsa el stick derecho para guardarlo.":"No hay contenido para mostrar.",muted,850,font,150);
+    if(c.entries.empty())text(280,200,c.title=="Favoritos"?"Tus canales favoritos apareceran aqui.\nSelecciona un canal y pulsa el stick derecho para guardarlo.":c.title=="Descargas"?"Aun no tienes descargas.\nAbre una pelicula o serie, elige el episodio y pulsa ZR\npara guardarlo en la SD y verlo sin conexion.":"No hay contenido para mostrar.",muted,850,font,150);
     rect({260,631,1000,1},{34,47,66,255});
     text(280,642,status,muted,940,small,30);
-    text(280,681,"A Abrir   B Volver   X Buscar   Y Inicio   R3 Favorito   L/R Pagina   + Salir",white,970,small,24);
+    text(280,681,c.title=="Descargas"?"A Reproducir   ZR Borrar / cancelar   B Volver   Y Inicio   L/R Pagina   + Salir":
+         "A Abrir   B Volver   X Buscar   Y Inicio   R3 Favorito   ZR Descargar   L/R Pagina   + Salir",white,970,small,24);
     if(!c.entries.empty()&&c.entries[selected].kind==EntryKind::Channel){rect({1080,103,145,26},panel);text(1090,105,favorite?"Quitar favorito":"+ Favorito",accent,140,small,24);}
     else if(!c.entries.empty())text(1130,108,std::to_string(selected+1)+" / "+std::to_string(c.entries.size()),muted,120,small,24);
     SDL_RenderPresent(renderer);
 }
 int View::hit(const Catalog& c,size_t selected,int x,int y)const{
-    if(!c.entries.empty()&&c.entries[selected].kind==EntryKind::Channel&&x>=1080&&x<=1225&&y>=103&&y<=129)return -8;
-    if(x>=16&&x<=223&&y>=150&&y<534){const int row=(y-150)/64;if((y-150)%64<50)return -2-row;}
+    if(!c.entries.empty()&&c.entries[selected].kind==EntryKind::Channel&&x>=1080&&x<=1225&&y>=103&&y<=129)return -20;
+    if(x>=16&&x<=223&&y>=150&&y<598){const int row=(y-150)/64;if((y-150)%64<50)return -2-row;}
     const int cols=columns(c),count=page_size(c),w=(946-14*(cols-1))/cols,top=detail(c)?273:132,h=detail(c)?160:cols==5?235:cols==4?148:222;
     if(x<278||y<top||y>=630)return -1;
     const int col=(x-278)/(w+14),row=(y-top)/(h+14);if(col>=cols||(x-278)%(w+14)>=w||(y-top)%(h+14)>=h)return -1;

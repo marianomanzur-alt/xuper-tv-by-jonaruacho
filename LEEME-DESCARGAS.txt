@@ -1,0 +1,26 @@
+XuperSwitch - paquete "descargas v3" (incluye tus mejoras v2 de calidad y subtitulos)
+
+Este ZIP es acumulativo: contiene todos los archivos que cambian respecto al proyecto original
+(tus mejoras v2 + la funcion de descargas). Se extrae encima de la carpeta del proyecto.
+
+1) Extraer encima del proyecto (la carpeta xuper-tv-by-jonaruacho-main queda actualizada):
+
+   PowerShell, parado en la carpeta que CONTIENE xuper-tv-by-jonaruacho-main:
+     Expand-Archive -Force -Path .\xuper-descargas-v3.zip -DestinationPath .
+
+   o en la terminal MSYS2 / Linux:
+     unzip -o xuper-descargas-v3.zip
+
+2) Compilar para Switch (terminal MSYS2 de devkitPro):
+     cd xuper-tv-by-jonaruacho-main
+     DEVKITPRO=/opt/devkitpro make clean
+     DEVKITPRO=/opt/devkitpro make -j2
+
+3) Copiar xuperswitch.nro a sdmc:/switch/xuperswitch/ (o donde lo tengas). No borres
+   device_state.json ni service.json.
+
+4) Probar en el PC (opcional):
+     make -f Makefile.host test-offline test-downloads test-offline-app
+
+Uso: ver DESCARGAS.md y CONTROLES.md. Resumen: ZR sobre un episodio/pelicula = descargar;
+L3 = ese y los siguientes; menu lateral "Descargas" = ver y reproducir sin conexion.

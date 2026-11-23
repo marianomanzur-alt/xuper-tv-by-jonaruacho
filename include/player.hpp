@@ -12,6 +12,9 @@ struct PlaybackOptions {
     std::vector<std::string> variants,items;
     std::vector<std::string> subtitles;
     std::function<bool(size_t,std::string&,std::string&)> subtitle_loader;
+    // Busqueda de subtitulos en internet: online_search llena las etiquetas; online_loader baja la elegida.
+    std::function<bool(std::vector<std::string>&,std::string&)> online_search;
+    std::function<bool(size_t,std::string&,std::string&)> online_loader;
     int variant=0,item=0;
     double start=0;
     double speed=1,volume=100;

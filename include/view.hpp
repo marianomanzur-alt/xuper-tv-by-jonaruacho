@@ -6,11 +6,16 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <functional>
 namespace xs {
 class View {
 public:
     SDL_Window* window=nullptr;SDL_Renderer* renderer=nullptr;TTF_Font* font=nullptr;
     int nav_focus=-1,active_nav=0;bool favorite=false;
+    // Resumen de descargas para la barra superior (vacio: nada que mostrar).
+    std::string overlay;
+    // Texto corto para la tarjeta (p. ej. "DESCARGADO 1.4 GB"); si devuelve vacio se usa la etiqueta normal.
+    std::function<std::string(const Entry&)> badge;
     bool open(std::string& error);
     void draw(const Catalog& catalog,size_t selected,const std::string& status,bool full_memory);
     void splash(const std::string& status);
@@ -18,7 +23,7 @@ public:
     bool poll_images(){return images&&images->poll();}
     int columns(const Catalog& catalog)const;
     int page_size(const Catalog& catalog)const;
-    // -8 favorite action; -2..-7 sidebar; -1 no hit; >=0 catalogue index.
+    // -20 favorite action; -2..-8 sidebar; -1 no hit; >=0 catalogue index.
     int hit(const Catalog& catalog,size_t selected,int x,int y)const;
     void close();~View(){close();}
 private:

@@ -1,0 +1,44 @@
+BUSCAR SUBTITULOS EN INTERNET
+=============================
+
+Dentro del reproductor: X (o +) > Subtitulos > "Buscar subtitulos en internet...".
+Se busca por el nombre de la serie/pelicula (y temporada/episodio). Eliges uno de
+la lista (A) y se descarga y se activa. Queda guardado en la SD, en
+  sd:/switch/xuperswitch/subtitulos/
+y la app lo vuelve a cargar solo la proxima vez que veas ese episodio o pelicula
+(tambien si lo tienes descargado en Descargas).
+
+FUENTES (se prueban en este orden; si una no tiene nada o falla, pasa a la otra)
+  1. OpenSubtitles  (opensubtitles.com)
+  2. SubDL          (subdl.com)
+Si la primera tiene resultados se muestran esos; la segunda se consulta solo si la
+primera no encuentra nada o da error. Los resultados salen primero en tu idioma
+preferido y, dentro de cada idioma, los mas descargados.
+
+CONFIGURAR (una sola vez)
+  1. Copia subtitulos.example.json a:  sd:/switch/xuperswitch/subtitulos.json
+  2. Edita las claves. Con UNA fuente configurada alcanza; con las dos hay respaldo.
+  3. "idiomas": orden de preferencia, codigos de 2 letras ("es", "en", "pt"...).
+
+  OpenSubtitles: crea una cuenta en opensubtitles.com y, en tu perfil, genera una
+    clave de API ("API consumer"). Pegala en "api_key". "usuario" y "clave" son
+    opcionales: si los pones, la app inicia sesion y tienes mas descargas por dia;
+    sin ellos funciona con el cupo basico.
+  SubDL: crea una cuenta en subdl.com y copia tu clave de API en "api_key".
+
+  Las dos cuentas son gratuitas y tienen limite diario de descargas. Si se agota,
+  la app avisa "limite de descargas alcanzado": prueba otra fuente o espera al dia
+  siguiente.
+
+SEGURIDAD
+  - subtitulos.json queda en texto plano en la SD: no lo compartas ni lo subas a
+    GitHub. Si usas "clave", usa una contrasena que no repitas en otros sitios.
+  - La app solo conecta por HTTPS, no sigue redirecciones con las claves y nunca las
+    escribe en registros ni en la biblioteca.
+
+SI NO ENCUENTRA NADA
+  - El nombre se toma de la lista (p. ej. "Serie" + "Episodio 3"). Si el titulo esta
+    en espanol y la fuente lo tiene en ingles (o al reves), puede no coincidir; los
+    subtitulos de series nuevas suelen aparecer en ingles primero.
+  - Revisa "idiomas" y que las claves esten bien copiadas (sin espacios).
+  - Los subtitulos .srt en Latin-1 se muestran bien en la mayoria de los casos.

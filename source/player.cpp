@@ -129,6 +129,7 @@ std::string play(const std::string& source,SDL_Renderer* renderer,const std::vec
     auto command=[&](const char* name,const std::string& value,const char* mode=nullptr){const char* args[]={name,value.c_str(),mode,nullptr};
         if(mpv_command(mpv,args)<0)notice="No se pudo aplicar esa opcion al video.";};
     auto show=[&]{visible_until=SDL_GetTicks()+4000;};
+    std::vector<std::string> online_labels;
     auto browse_refresh=[&]{bool ok=true;browse_items=list_subtitle_dir(browse_path,&ok);
         if(!ok){notice="No se pudo leer esa carpeta.";browse_path=browse_root;browse_items=list_subtitle_dir(browse_path);}
         last_browse=browse_path;};
@@ -199,12 +200,13 @@ std::string play(const std::string& source,SDL_Renderer* renderer,const std::vec
             {"Sincronía subtítulos: "+std::to_string(property("sub-delay")).substr(0,5)+" s",11},
             {"Tamaño subtítulos: "+std::to_string(property("sub-scale")).substr(0,4),12},{"Brillo: "+std::to_string(static_cast<int>(property("brightness"))),13},
             {"Retroceder 60 segundos",14},{"Adelantar 60 segundos",15},{"Reiniciar video",16},{"Información del video",17},{std::string("Siguiente episodio automático: ")+(auto_next?"Si":"No"),24},{"Calidad de imagen: "+qualities[quality],28},{"Cerrar reproductor",18}};}
-        if(page==1||page==2){if(page==2){rows.push_back({"Desactivar subtítulos",20,-1});rows.push_back({"Buscar archivo en la consola (SD)...",27});}for(const auto& t:tracks())if(t.type==(page==1?"audio":"sub"))rows.push_back({(t.selected?"* ":"  ")+t.label,page==1?19:20,t.id});}
+        if(page==1||page==2){if(page==2){rows.push_back({"Desactivar subtítulos",20,-1});rows.push_back({"Buscar archivo en la consola (SD)...",27});if(options.online_search)rows.push_back({"Buscar subtítulos en internet...",29});}for(const auto& t:tracks())if(t.type==(page==1?"audio":"sub"))rows.push_back({(t.selected?"* ":"  ")+t.label,page==1?19:20,t.id});}
         if(page==2)for(size_t i=0;i<options.subtitles.size();++i)rows.push_back({"Servicio: "+options.subtitles[i],23,static_cast<int64_t>(i)});
         if(page==5){
             if(browse_path!=browse_root)rows.push_back({"[..]  Subir una carpeta",25,-1});
             for(size_t i=0;i<browse_items.size();++i)rows.push_back({(browse_items[i].dir?"[CARPETA] ":"          ")+clip_utf8(browse_items[i].name,90),browse_items[i].dir?25:26,static_cast<int64_t>(i)});
             if(browse_items.empty())rows.push_back({"(no hay carpetas ni subtítulos .srt/.ass/.vtt aquí)",0});}
+        if(page==6)for(size_t i=0;i<online_labels.size();++i)rows.push_back({clip_utf8(online_labels[i],100),30,static_cast<int64_t>(i)});
         if(page==3)for(size_t i=0;i<options.variants.size();++i)rows.push_back({(static_cast<int>(i)==options.variant?"* ":"  ")+options.variants[i],21,static_cast<int64_t>(i)});
         if(page==4)for(size_t i=0;i<options.items.size();++i)rows.push_back({(static_cast<int>(i)==options.item?"* ":"  ")+options.items[i],22,static_cast<int64_t>(i)});
         if(rows.empty())rows.push_back({"No hay opciones disponibles para este video",0});
@@ -261,6 +263,7 @@ std::string play(const std::string& source,SDL_Renderer* renderer,const std::vec
         }
         if(back){if(menu){
             if(page==5){if(browse_path!=browse_root){browse_path=parent_path(browse_path,browse_root);browse_refresh();selection=0;}else{page=2;selection=0;}}
+            else if(page==6){page=2;selection=0;}
             else if(page){page=0;selection=0;}else menu=false;}else running=false;show();}
         if(settings){menu=!menu;page=0;selection=0;notice.clear();show();}
         if(audio)cycle_track("audio");
@@ -323,6 +326,36 @@ std::string play(const std::string& source,SDL_Renderer* renderer,const std::vec
                         if(mpv_command(mpv,args)<0)notice="No se pudo cargar ese archivo de subtítulos.";
                         else{mpv_get_property(mpv,"sid",MPV_FORMAT_INT64,&external_id);int on=1;mpv_set_property(mpv,"sub-visibility",MPV_FORMAT_FLAG,&on);
                             loaded_sub_file=full;notice="Subtítulo cargado: "+clip_utf8(name,60);page=0;selection=2;}
+                        break;}
+                    case 29:case 30:{
+                        auto busy=[&](const char* text){SDL_SetRenderDrawColor(renderer,10,17,28,255);SDL_RenderClear(renderer);SDL_RenderCopy(renderer,texture,nullptr,nullptr);
+                            SDL_SetRenderDrawColor(renderer,10,17,28,255);SDL_Rect loading{20,550,1240,140};SDL_RenderFillRect(renderer,&loading);
+                            draw_text(48,580,text,{238,243,250,255});SDL_RenderPresent(renderer);};
+                        std::string problem;
+                        if(row.action==29){
+                            busy("Buscando subtítulos en internet...");
+                            online_labels.clear();
+                            if(!options.online_search||!options.online_search(online_labels,problem)||online_labels.empty()){online_labels.clear();notice=problem.empty()?"No se encontraron subtítulos.":problem;break;}
+                            page=6;selection=0;break;}
+                        if(!options.online_loader||row.value<0||static_cast<size_t>(row.value)>=online_labels.size())break;
+                        busy("Descargando subtítulo...");
+                        std::string data;problem.clear();
+                        if(!options.online_loader(static_cast<size_t>(row.value),data,problem)){notice=problem.empty()?"No se pudo descargar el subtítulo.":problem;break;}
+                        if(external_id>=0){command("sub-remove",std::to_string(external_id));external_id=-1;}
+                        loaded_sub_file.clear();
+                        // Al exito el cargador deja en "problem" la ruta donde guardo el archivo (si pudo).
+                        std::string target=problem;
+                        if(target.empty()){
+                            std::ofstream file(subtitle_cache,std::ios::binary|std::ios::trunc);file.write(data.data(),static_cast<std::streamsize>(data.size()));file.close();
+                            if(!file){notice="No se pudo guardar el subtítulo temporal.";break;}
+                            subtitle_written=true;target=subtitle_cache;}
+                        mpv_set_property_string(mpv,"sub-codepage","utf8:cp1252");
+                        const std::string name=online_labels[static_cast<size_t>(row.value)];
+                        const char* args[]={"sub-add",target.c_str(),"select",name.c_str(),nullptr};
+                        if(mpv_command(mpv,args)<0)notice="Formato de subtítulos no compatible.";
+                        else{external_index=-1;mpv_get_property(mpv,"sid",MPV_FORMAT_INT64,&external_id);int on=1;mpv_set_property(mpv,"sub-visibility",MPV_FORMAT_FLAG,&on);
+                            if(target!=subtitle_cache){loaded_sub_file=target;}
+                            notice="Subtítulo cargado";page=0;selection=2;}
                         break;}
                     case 23:{std::string data,subtitle_error;
                         if(external_index==row.value&&external_id>=0){loaded_sub_file.clear();mpv_set_property_string(mpv,"sid",std::to_string(external_id).c_str());int on=1;mpv_set_property(mpv,"sub-visibility",MPV_FORMAT_FLAG,&on);notice="Subtítulo seleccionado";page=0;selection=2;break;}
@@ -390,7 +423,7 @@ std::string play(const std::string& source,SDL_Renderer* renderer,const std::vec
                 SDL_Rect panel{20,menu?35:526,1240,menu?650:175};SDL_RenderFillRect(renderer,&panel);
                 const SDL_Color white{238,243,250,255},cyan{73,219,223,255},muted{180,192,209,255};
                 if(menu){draw_text(48,48,options.title.empty()?"Reproductor":options.title,white);
-                    draw_text(48,84,page==0?"A: elegir | izq/der: ajustar | B: volver":page==5?"SD: "+clip_utf8(browse_path,70)+" | A: abrir | B: subir | L/R: +-10":"A: seleccionar | B: ajustes",muted);
+                    draw_text(48,84,page==0?"A: elegir | izq/der: ajustar | B: volver":page==5?"SD: "+clip_utf8(browse_path,70)+" | A: abrir | B: subir | L/R: +-10":page==6?"A: descargar y usar | B: volver":"A: seleccionar | B: ajustes",muted);
                     auto rows=menu_rows();const int start=selection/10*10;
                     for(int i=start;i<static_cast<int>(rows.size())&&i<start+10;++i){const int y=130+(i-start)*41;
                         if(i==selection){SDL_SetRenderDrawColor(renderer,28,63,78,255);SDL_Rect highlight{35,y-2,1207,39};SDL_RenderFillRect(renderer,&highlight);}

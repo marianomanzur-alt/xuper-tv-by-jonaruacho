@@ -4,7 +4,7 @@
 #include <vector>
 
 namespace xs {
-enum class EntryKind { Media, Category, Channel, Section, VodCategory, Asset, Episode, SearchPage, VodPage, LiveSection, SearchAction, Donation, Favorites, Resume };
+enum class EntryKind { Media, Category, Channel, Section, VodCategory, Asset, Episode, SearchPage, VodPage, LiveSection, SearchAction, Donation, Favorites, Resume, Downloads, Offline };
 struct Entry {
     std::string title;
     std::string source;
