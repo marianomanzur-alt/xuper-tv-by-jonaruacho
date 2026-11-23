@@ -16,7 +16,7 @@ ZL/ZR desplaza 60 segundos y L/R cambia episodio/canal.
 | Pausa y progreso | Pausa/continua y muestra tiempo, duracion y barra |
 | Adelantar/retroceder | Desplazamiento exacto de 10/60 s si el medio admite seek |
 | Audio/idioma | Lista las pistas y sus idiomas; Y cambia rapidamente |
-| Subtitulos | Pistas internas, desactivar, tamano y desfase; SRT HTTPS de la API |
+| Subtitulos | Pistas internas, desactivar, tamano y desfase; SRT HTTPS de la API; archivos .srt/.ass/.ssa/.vtt/.sub desde la tarjeta SD |
 | Calidad/fuente | Lista las fuentes autorizadas; solicita la seleccion y conserva tiempo, velocidad, volumen y pausa |
 | Episodios/canales | Selector y L/R; la nueva entrada obtiene su propia autorizacion |
 | Siguiente episodio | Automatico al finalizar una serie; se puede desactivar |
@@ -45,3 +45,10 @@ Ranger pendientes no estan completos en el port. El render actual es software
 En PC de desarrollo: Espacio/Enter=A, X/Tab=menu, Escape=B, Y=audio,
 S=subtitulos, [ y ]=velocidad, F=pantalla, M=silencio, J/L=60 s,
 PageUp/PageDown=episodio anterior/siguiente.
+
+Subtitulos desde la SD: Menu > Subtitulos > "Buscar archivo en la consola (SD)...".
+Abre en sdmc:/switch/xuperswitch/subtitulos si existe (si no, en la raiz de la SD) y
+recuerda la ultima carpeta. A abre carpeta o carga el archivo; B sube una carpeta
+(en la raiz vuelve al menu de subtitulos); L/R saltan 10 filas. Ajusta el desfase
+con "Sincronia subtitulos" si hace falta. Un archivo cargado reemplaza al anterior
+cargado por este medio o por el servicio.
