@@ -16,6 +16,7 @@
 #include "offline_library.hpp"
 #include "subtitle_search.hpp"
 #include "variant_pick.hpp"
+#include "subtitle_query.hpp"
 #include <sys/stat.h>
 #include <cctype>
 #include <thread>
@@ -80,16 +81,6 @@ static std::string subtitles_directory(){
     char cwd[1024]{};
     return (getcwd(cwd,sizeof(cwd))?std::string(cwd):std::string("."))+"/subtitulos";
 #endif
-}
-// Titulo/temporada/episodio para buscar subtitulos: la lista abierta suele traer el nombre de la serie.
-static xs::SubtitleQuery subtitle_query_for(const xs::Entry& entry,const std::string& list_title){
-    const bool generic=list_title.empty()||list_title=="Continuar viendo"||list_title=="Descargas"||list_title.rfind("Resultados",0)==0;
-    xs::SubtitleQuery own=xs::guess_subtitle_query(entry.title);
-    if(entry.kind!=xs::EntryKind::Episode||generic)return own;
-    xs::SubtitleQuery show=xs::guess_subtitle_query(list_title);
-    if(show.title.empty())return own;
-    if(entry.series_id.empty()){own.title=show.title;if(!own.year)own.year=show.year;return own;}   // pelicula
-    own.title=show.title;if(!own.season)own.season=show.season;if(!own.year)own.year=show.year;return own;
 }
 // Guarda el subtitulo (ya en UTF-8) en la SD con un nombre legible. Devuelve la ruta o "" si no pudo.
 static std::string save_subtitle_file(const std::string& base,const xs::SubtitleHit& hit,const std::string& data){
@@ -335,7 +326,7 @@ int main(int argc,char** argv){
                     for(size_t i=index;i<(download_rest?catalog.entries.size():index+1);++i){
                         const xs::Entry& e=catalog.entries[i];
                         if(e.kind!=xs::EntryKind::Episode||(download_rest&&e.series_id!=entry.series_id))continue;
-                        last_result=downloads->enqueue(e,show,static_cast<int>(i));
+                        last_result=downloads->enqueue(e,show.empty()?e.show:show,static_cast<int>(i));
                         if(last_result==xs::EnqueueResult::Added||last_result==xs::EnqueueResult::Retrying)++queued;
                         if(last_result==xs::EnqueueResult::NoSession||last_result==xs::EnqueueResult::QueueFull)break;
                     }
@@ -448,7 +439,7 @@ int main(int argc,char** argv){
                         // Buscar subtitulos en internet (manual desde el menu y automatico al abrir el video).
                         if(subtitle_search&&(current.kind==xs::EntryKind::Episode||current.kind==xs::EntryKind::Offline||current.kind==xs::EntryKind::Media)){
                             auto hits=std::make_shared<std::vector<xs::SubtitleHit>>();
-                            const xs::SubtitleQuery query=subtitle_query_for(current,catalog.title);
+                            const xs::SubtitleQuery query=xs::subtitle_query_for(current,catalog.title);
                             std::string readable=safe_name(query.title.empty()?current.title:query.title,40);
                             if(query.episode>0)readable+=(query.season>0?"_S"+std::to_string(query.season):std::string())+"_E"+std::to_string(query.episode);
                             const std::string file_base=readable;

@@ -14,6 +14,7 @@ struct Entry {
     std::string content_id{};
     std::string series_id{};
     std::string program_type{};
+    std::string show{};      // nombre de la serie/pelicula a la que pertenece un episodio
     std::string query{};
     int page=1;
     std::string artwork{},artwork_cache{},description{};

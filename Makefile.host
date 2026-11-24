@@ -78,3 +78,8 @@ test-variants:
 	@mkdir -p build-host
 	$(CXX) $(CXXFLAGS) tests/variant_pick_test.cpp -o build-host/variant_pick_test
 	./build-host/variant_pick_test
+
+test-subquery:
+	@mkdir -p build-host
+	$(CXX) $(CXXFLAGS) $(CURL_CFLAGS) source/catalog.cpp source/subtitle_search.cpp tests/subtitle_query_test.cpp $(CURL_LIBS) -lz -o build-host/subtitle_query_test
+	./build-host/subtitle_query_test

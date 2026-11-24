@@ -684,7 +684,7 @@ BrowseResult service_browse(const std::shared_ptr<ServiceSession>& s,const Entry
     const auto episodes=asset->find("simpleProgramList");
     if(episodes==asset->end()||!episodes->is_array()){out.status="Ficha recibida sin videos o episodios reconocidos.";return out;}
     for(const auto& item:*episodes){const std::string id=text(item,"contentId");if(id.empty()||protected_item(item))continue;
-        Entry video;video.kind=EntryKind::Episode;video.content_id=id;video.column_id=e.column_id;
+        Entry video;video.kind=EntryKind::Episode;video.content_id=id;video.column_id=e.column_id;video.show=title(*asset);
         artwork(*asset,video);if(video.artwork.empty()){video.artwork=e.artwork;video.artwork_cache=e.artwork_cache;}
         video.program_type=e.program_type;video.series_id=e.program_type=="0"?e.content_id:"";
         video.title=e.program_type=="0"?"Episodio "+text(item,"seriesNumber","?")+" - "+title(item):"Reproducir: "+title(*asset);

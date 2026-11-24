@@ -14,9 +14,10 @@ int main(){
         xs::Entry bad=serie;bad.program_type="9";assert(!xs::SavedCatalog::can_favorite(bad)&&!saved.toggle(bad));
         bad=serie;bad.content_id.clear();assert(!xs::SavedCatalog::can_favorite(bad));
         xs::Entry other;other.kind=xs::EntryKind::Category;other.title="x";assert(!xs::SavedCatalog::can_favorite(other));
+        serie.show="Mi serie larga";
         assert(saved.toggle(serie)&&saved.toggle(peli)&&saved.contains(serie)&&saved.contains(peli));
         {xs::SavedCatalog again(path);assert(again.favorites.size()==3);
-         bool found=false;for(const auto& f:again.favorites)if(f.kind==xs::EntryKind::Asset&&f.content_id=="s100"){found=true;assert(f.program_type=="0"&&f.column_id==7&&f.title=="Mi serie"&&f.artwork_cache==serie.artwork_cache&&f.source.empty()&&f.artwork.empty());}
+         bool found=false;for(const auto& f:again.favorites)if(f.kind==xs::EntryKind::Asset&&f.content_id=="s100"){found=true;assert(f.show=="Mi serie larga"&&f.program_type=="0"&&f.column_id==7&&f.title=="Mi serie"&&f.artwork_cache==serie.artwork_cache&&f.source.empty()&&f.artwork.empty());}
          assert(found&&again.contains(serie)&&again.contains(peli));}
         {std::ifstream f2(path);const std::string raw((std::istreambuf_iterator<char>(f2)),{});assert(raw.find("secret")==std::string::npos&&raw.find("token")==std::string::npos);}
         assert(saved.toggle(serie)&&!saved.contains(serie)&&saved.contains(peli));assert(xs::SavedCatalog(path).favorites.size()==2);
