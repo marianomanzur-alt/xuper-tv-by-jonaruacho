@@ -68,6 +68,23 @@ int main(int argc,char** argv) {
         size_t progress=0;auto unified=xs::service_search_all(result.session,"Prueba ñ",[&](size_t done,size_t total){progress=total;return done<=total;});
         if(!unified.ok||unified.catalog.entries.size()!=4||progress!=1||unified.catalog.entries.front().kind!=xs::EntryKind::Channel)return 1;
         if(unified.catalog.entries.front().artwork!="https://images.example.invalid/channel.png")return 1;
+        // Solo peliculas/series: no recorre categorias de TV (progress nunca se llama) y no incluye canales.
+        size_t vod_calls=0;auto vod_only=xs::service_search_all(result.session,"Prueba ñ",[&](size_t,size_t){++vod_calls;return true;},xs::SearchScope::Vod);
+        if(!vod_only.ok||vod_calls!=0||vod_only.catalog.entries.size()!=3)return 1;
+        for(const auto& e:vod_only.catalog.entries)if(e.kind==xs::EntryKind::Channel)return 1;
+        // Solo TV: no consulta VOD.
+        auto live_only=xs::service_search_all(result.session,"Prueba ñ",{},xs::SearchScope::Live);
+        if(!live_only.ok||live_only.catalog.entries.size()!=1||live_only.catalog.entries.front().kind!=xs::EntryKind::Channel)return 1;
+        // Filtro por tipo: un tipo inexistente deja la pagina sin titulos.
+        auto only_movies=xs::service_search(result.session,"Prueba ñ",1,"1");
+        if(!only_movies.ok||only_movies.catalog.entries.size()!=2||only_movies.catalog.entries.front().program_type!="1"||only_movies.catalog.entries.back().program_type!="1")return 1;
+        auto only_series=xs::service_search(result.session,"Prueba ñ",1,"0");
+        if(!only_series.ok||only_series.catalog.entries.size()!=2||only_series.catalog.entries.front().program_type!="0")return 1;
+        // "Mas resultados" conserva el filtro: la pagina 2 solo trae una pelicula, asi que filtrando only_series queda vacia.
+        auto series_more=xs::service_browse(result.session,only_series.catalog.entries.back());
+        if(!series_more.ok||series_more.catalog.entries.size()!=0)return 1;
+        auto none=xs::service_search(result.session,"Prueba ñ",1,"9");
+        if(!none.ok||none.catalog.entries.size()!=3)return 1;   // "9" no es filtro valido: se ignora
         // Cached channel catalogue serves repeated browsing without another request.
         return xs::service_channels(result.session,200).catalog.entries.size()==1?0:1;
     }

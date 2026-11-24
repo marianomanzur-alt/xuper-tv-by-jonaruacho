@@ -66,6 +66,9 @@ cargado por este medio o por el servicio.
   episodio, el archivo de la SD que cargaste (se vuelve a cargar solo al reabrirlo).
   En series, el explorador de la SD abre la carpeta del ultimo archivo usado y deja el
   cursor en el siguiente.
+- La busqueda (X) mira solo donde estas: en Peliculas busca peliculas, en Series busca series,
+  en Inicio/Favoritos/otros busca peliculas y series, y solo en "TV en vivo" busca canales
+  (esa es la unica que recorre categorias y puede tardar). "Mas resultados" conserva el filtro.
 - Busqueda mas rapida: la lista de canales de TV se guarda en
   sdmc:/switch/xuperswitch/channel_cache.json (valida 12 horas). La primera busqueda
   del dia sigue consultando el servicio; las siguientes, tambien tras reiniciar la app,

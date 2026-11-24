@@ -27,13 +27,13 @@
 #include <switch.h>
 
 #endif
-static bool search_keyboard(xs::View& view,const xs::Catalog& catalog,size_t selected,bool full_memory,std::string& value) {
+static bool search_keyboard(xs::View& view,const xs::Catalog& catalog,size_t selected,bool full_memory,std::string& value,const std::string& scope_label) {
 #ifdef __SWITCH__
     (void)view;(void)catalog;(void)selected;(void)full_memory;
     SwkbdConfig keyboard;char buffer[241]{};
     if(R_FAILED(swkbdCreate(&keyboard,0)))return false;
     swkbdConfigMakePresetDefault(&keyboard);
-    swkbdConfigSetHeaderText(&keyboard,"Buscar canales, peliculas y series");
+    swkbdConfigSetHeaderText(&keyboard,("Buscar en "+scope_label).c_str());
     swkbdConfigSetGuideText(&keyboard,"Escribe parte del titulo");
     swkbdConfigSetStringLenMax(&keyboard,80);
     const Result result=swkbdShow(&keyboard,buffer,sizeof(buffer));swkbdClose(&keyboard);
@@ -41,7 +41,7 @@ static bool search_keyboard(xs::View& view,const xs::Catalog& catalog,size_t sel
     value=buffer;return !value.empty();
 #else
     value.clear();SDL_StartTextInput();bool accepted=false,running=true;
-    while(running){view.draw(catalog,selected,"Buscar: "+value+" | Enter: buscar; Esc: cancelar",full_memory);
+    while(running){view.draw(catalog,selected,"Buscar en "+scope_label+": "+value+" | Enter: buscar; Esc: cancelar",full_memory);
         SDL_Event event;while(SDL_PollEvent(&event)){
             if(event.type==SDL_QUIT)running=false;
             if(event.type==SDL_TEXTINPUT&&value.size()+std::strlen(event.text.text)<=240)value+=event.text.text;
@@ -346,9 +346,15 @@ int main(int argc,char** argv){
             if(!session)status="Pulsa Y para activar antes de buscar.";
             else{
                 std::string query;
-                if(search_keyboard(view,catalog,selected,full_memory,query)){
+                // Se busca donde estas: en TV en vivo solo canales; en cualquier otro lado solo peliculas y series
+                // (o solo peliculas / solo series si estas en esa seccion). Buscar en canales recorre cada categoria y tarda.
+                const int nav=view.active_nav;
+                const xs::SearchScope scope=nav==1?xs::SearchScope::Live:xs::SearchScope::Vod;
+                const std::string type_filter=nav==2?"1":nav==3?"0":"";
+                const std::string scope_label=nav==1?"canales de TV":nav==2?"peliculas":nav==3?"series":"peliculas y series";
+                if(search_keyboard(view,catalog,selected,full_memory,query,scope_label)){
                     xs::BrowseResult result;xs::trace("catalog:search_begin");
-                    load([&]{result=xs::service_search_all(session,query,[&](size_t done,size_t total){task_done=done;task_total=total;return !cancel_task.load();});},"Buscando canales, peliculas y series... B: detener TV");status=result.status;
+                    load([&]{result=xs::service_search_all(session,query,[&](size_t done,size_t total){task_done=done;task_total=total;return !cancel_task.load();},scope,type_filter);},scope==xs::SearchScope::Live?"Buscando canales de TV... B: detener":"Buscando "+scope_label+"...");status=result.status;
                     xs::trace(result.ok?"catalog:search_loaded":"catalog:search_failed");
                     if(result.ok){history.emplace_back(std::move(catalog),selected);catalog=std::move(result.catalog);selected=0;}
                 }

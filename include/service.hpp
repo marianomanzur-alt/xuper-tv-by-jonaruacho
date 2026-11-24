@@ -23,7 +23,10 @@ LoginAttempt service_bootstrap(const std::string& config_path);
 BrowseResult service_root(const std::shared_ptr<ServiceSession>& session);
 BrowseResult service_channels(const std::shared_ptr<ServiceSession>& session,int column_id);
 BrowseResult service_browse(const std::shared_ptr<ServiceSession>& session,const Entry& entry);
-BrowseResult service_search(const std::shared_ptr<ServiceSession>& session,const std::string& query,int page=1);
-BrowseResult service_search_all(const std::shared_ptr<ServiceSession>& session,const std::string& query,const std::function<bool(size_t,size_t)>& progress={});
+// type_filter: "1" solo peliculas, "0" solo series, "" ambas.
+BrowseResult service_search(const std::shared_ptr<ServiceSession>& session,const std::string& query,int page=1,const std::string& type_filter="");
+// Donde buscar: Everything (TV + peliculas/series), Live (solo canales de TV) o Vod (solo peliculas/series).
+enum class SearchScope {Everything,Live,Vod};
+BrowseResult service_search_all(const std::shared_ptr<ServiceSession>& session,const std::string& query,const std::function<bool(size_t,size_t)>& progress={},SearchScope scope=SearchScope::Everything,const std::string& type_filter="");
 SourceResult service_source(const std::shared_ptr<ServiceSession>& session,const Entry& entry,int variant=0);
 }

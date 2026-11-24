@@ -214,7 +214,7 @@ def main(binary,app=None):
             Handler.mode='bootstrap_vod';Handler.posts=0;Handler.gets=0;Handler.failures=[]
             subprocess.run([str(Path(binary).resolve()),str(path),'bootstrap_vod'],check=True,timeout=15)
             assert not Handler.failures,Handler.failures
-            assert Handler.posts==18,Handler.posts
+            assert Handler.posts==23,Handler.posts
             assert Handler.gets==0
             print('local TLS test: bootstrap_vod passed (movies, series, episodes, search, pagination, denied source)')
             assert len(set(Handler.serials))==1

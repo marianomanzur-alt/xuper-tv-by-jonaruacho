@@ -593,7 +593,7 @@ static bool more_pages(const Json& data,int page,size_t count,int page_size=100,
     if(total.size()>10||total.find_first_not_of("0123456789")!=std::string::npos)return false;
     return std::strtoll(total.c_str(),nullptr,10)>static_cast<long long>(page)*page_size;
 }
-BrowseResult service_search(const std::shared_ptr<ServiceSession>& s,const std::string& query,int page) {
+BrowseResult service_search(const std::shared_ptr<ServiceSession>& s,const std::string& query,int page,const std::string& type_filter) {
     BrowseResult out;if(!s){out.status="Pulsa Y para activar antes de buscar.";return out;}
     if(query.empty()||query.size()>240||page<1||page>10000){out.status="Escribe un titulo para buscar.";return out;}
     CurlScope curl;if(!curl.ready){out.status="No se pudo iniciar cURL.";return out;}
@@ -605,32 +605,40 @@ BrowseResult service_search(const std::shared_ptr<ServiceSession>& s,const std::
     size_t received=0;
     for(const auto& group:*groups){const auto list=group.find("itemList");if(list==group.end()||!list->is_array())continue;
         received+=list->size();append_assets(*list,out.catalog,-1,text(group,"programType"));}
+    if(type_filter=="0"||type_filter=="1")   // la pagina se pide completa; se descartan los del otro tipo
+        out.catalog.entries.erase(std::remove_if(out.catalog.entries.begin(),out.catalog.entries.end(),[&](const Entry& x){return x.program_type!=type_filter;}),out.catalog.entries.end());
+    const size_t shown=out.catalog.entries.size();
     if(more_pages(data,page,received)){
-        Entry next;next.title="Mas resultados >";next.kind=EntryKind::SearchPage;next.query=query;next.page=page+1;
+        Entry next;next.title="Mas resultados >";next.kind=EntryKind::SearchPage;next.query=query;next.page=page+1;next.program_type=type_filter;
         out.catalog.entries.push_back(std::move(next));
     }
     out.catalog.title="Resultados de busqueda";
-    out.ok=true;out.status=received?"Busqueda: pagina "+std::to_string(page)+". A: abrir titulo; B: volver.":"Sin resultados para esa busqueda.";
+    out.ok=true;out.status=shown?"Busqueda: pagina "+std::to_string(page)+". A: abrir titulo; B: volver.":"Sin resultados para esa busqueda.";
     return out;
 }
-BrowseResult service_search_all(const std::shared_ptr<ServiceSession>& s,const std::string& query,const std::function<bool(size_t,size_t)>& progress){
+BrowseResult service_search_all(const std::shared_ptr<ServiceSession>& s,const std::string& query,const std::function<bool(size_t,size_t)>& progress,SearchScope scope,const std::string& type_filter){
     BrowseResult out;out.catalog.title="Resultados: "+query;
     if(!s||query.empty()||query.size()>240){out.status="Escribe un nombre para buscar.";return out;}
     const auto key=search_key(query);if(key.empty()){out.status="Escribe letras o numeros para buscar.";return out;}
     std::set<std::string> codes;size_t done=0,failed=0;
-    for(int id:s->live_categories){
+    if(scope!=SearchScope::Vod)for(int id:s->live_categories){
         if(progress&&!progress(done,s->live_categories.size())){out.catalog.warnings.push_back("Busqueda de TV cancelada: resultados parciales.");break;}
         auto channels=service_channels(s,id);++done;if(!channels.ok){++failed;continue;}
         for(const auto& e:channels.catalog.entries)if(search_key(e.title).find(key)!=std::string::npos&&codes.insert(e.channel_code).second){
             out.catalog.entries.push_back(e);if(out.catalog.entries.size()>=3000)break;
         }
     }
-    auto vod=service_search(s,query);if(vod.ok){out.catalog.entries.insert(out.catalog.entries.end(),vod.catalog.entries.begin(),vod.catalog.entries.end());}
-    else out.catalog.warnings.push_back("No se pudo consultar peliculas y series; reintenta la busqueda.");
+    BrowseResult vod;
+    if(scope!=SearchScope::Live){
+        vod=service_search(s,query,1,type_filter);
+        if(vod.ok){out.catalog.entries.insert(out.catalog.entries.end(),vod.catalog.entries.begin(),vod.catalog.entries.end());}
+        else out.catalog.warnings.push_back("No se pudo consultar peliculas y series; reintenta la busqueda.");}
+    else vod.ok=true;
     if(failed)out.catalog.warnings.push_back("Algunas categorias de TV no respondieron; reintenta para completar.");
     flush_disk_index(*s);
     out.ok=vod.ok||!out.catalog.entries.empty()||(!s->live_categories.empty()&&!failed);
-    out.status=std::to_string(out.catalog.entries.size())+" resultados: canales, peliculas y series.";
+    const char* what=scope==SearchScope::Live?"canales":scope==SearchScope::Vod?(type_filter=="1"?"peliculas":type_filter=="0"?"series":"peliculas y series"):"canales, peliculas y series";
+    out.status=std::to_string(out.catalog.entries.size())+" resultados: "+what+".";
     if(!out.catalog.warnings.empty())out.status+=" Resultados parciales: "+out.catalog.warnings.front();
     return out;
 }
@@ -652,7 +660,7 @@ static BrowseResult vod_list(const std::shared_ptr<ServiceSession>& s,const Entr
     return out;
 }
 BrowseResult service_browse(const std::shared_ptr<ServiceSession>& s,const Entry& e) {
-    if(e.kind==EntryKind::SearchPage)return service_search(s,e.query,e.page);
+    if(e.kind==EntryKind::SearchPage)return service_search(s,e.query,e.page,e.program_type);
     BrowseResult out;if(!s){out.status="Pulsa Y para activar el dispositivo.";return out;}
     CurlScope curl;if(!curl.ready){out.status="No se pudo iniciar cURL.";return out;}
     if(e.kind==EntryKind::VodPage||e.kind==EntryKind::VodCategory)return vod_list(s,e);
