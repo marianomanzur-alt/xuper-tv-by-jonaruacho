@@ -35,6 +35,12 @@ class H(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         state["log"].append(("GET", self.path, dict(self.headers), ""))
         if u.path == "/os/subtitles":
+            if state.get("os_redirect") and "%2C" in self.path:
+                self.send_response(301); self.send_header("Location", self.path.replace("%2C", ",")); self.send_header("Content-Length", "0"); self.end_headers(); return
+            if state.get("os_redirect") == "canon" and "canon=1" not in self.path:
+                self.send_response(301); self.send_header("Location", self.path + "&canon=1"); self.send_header("Content-Length", "0"); self.end_headers(); return
+            if state.get("os_redirect") == "evil":
+                self.send_response(301); self.send_header("Location", "https://evil.example/x"); self.send_header("Content-Length", "0"); self.end_headers(); return
             m = state["os_mode"]
             if m == "401": return self.reply(401, {})
             if m == "429": return self.reply(429, {})
@@ -172,5 +178,12 @@ out = run("search", 1, "os,sd", "Show", 1, 2)   # puerto sin servidor
 check("sin conexion: error, no cuelga", "search=0" in out and "Conexion" in out, out)
 out = search("os,sd", title="")
 check("titulo vacio", "search=0" in out, out)
+state["os_mode"] = "ok"; state["os_redirect"] = "canon"
+out = search("os")
+check("301 al mismo dominio se sigue", "search=1" in out and "used=OpenSubtitles" in out and "fetch=1" in out, out)
+state["os_redirect"] = "evil"
+out = search("os")
+check("redireccion a dominio ajeno se rechaza", "search=0" in out and "redireccion no permitida" in out, out)
+state["os_redirect"] = None
 # https obligatorio sin allow_http: se prueba contra la API real sin red -> no debe aceptar http
 print("\n%d fallos" % len(failures)); sys.exit(1 if failures else 0)

@@ -31,7 +31,7 @@ std::string url_encode(const std::string& s){
     return out;}
 std::string join(const std::vector<std::string>& v,const char* sep,bool up=false){
     std::string out;for(size_t i=0;i<v.size();++i){if(i)out+=sep;std::string x=v[i];if(up)for(char& c:x)c=static_cast<char>(std::toupper(static_cast<unsigned char>(c)));out+=x;}return out;}
-struct Reply {long status=0;std::string body;std::string error;};
+struct Reply {long status=0;std::string body;std::string error;std::string redirect;};
 struct Sink {std::string data;bool big=false;};
 size_t sink(char* p,size_t s,size_t n,void* u){auto* b=static_cast<Sink*>(u);const size_t bytes=s*n;
     if(b->data.size()+bytes>kMaxBody){b->big=true;return 0;}b->data.append(p,bytes);return bytes;}
@@ -61,11 +61,32 @@ Reply http(const SubtitleSearchConfig& cfg,const std::string& url,const std::str
     if(post){curl_easy_setopt(curl,CURLOPT_POSTFIELDS,post->data());curl_easy_setopt(curl,CURLOPT_POSTFIELDSIZE_LARGE,static_cast<curl_off_t>(post->size()));}
     if(list)curl_easy_setopt(curl,CURLOPT_HTTPHEADER,list);
     const CURLcode rc=curl_easy_perform(curl);curl_easy_getinfo(curl,CURLINFO_RESPONSE_CODE,&reply.status);
+    {char* loc=nullptr;if(curl_easy_getinfo(curl,CURLINFO_REDIRECT_URL,&loc)==CURLE_OK&&loc)reply.redirect=loc;}
     curl_slist_free_all(list);curl_easy_cleanup(curl);
     if(rc!=CURLE_OK)reply.error=out.big?"Respuesta demasiado grande.":std::string("Conexion: ")+curl_easy_strerror(rc);
     reply.body=std::move(out.data);return reply;}
+// Peticiones a OpenSubtitles: si responde con una redireccion (p. ej. 301 hacia la forma
+// canonica de la consulta) se repite UNA vez por vez, solo hacia un dominio opensubtitles.com
+// por HTTPS (o el mismo origen en pruebas locales): la clave nunca viaja a otro sitio.
+Reply os_http(const SubtitleSearchConfig& cfg,std::string url,const std::string* post,const std::vector<std::string>& headers){
+    auto origin=[](const std::string& u){const size_t s=u.find("://");if(s==std::string::npos)return std::string();const size_t e=u.find('/',s+3);return u.substr(0,e==std::string::npos?u.size():e);};
+    auto host_ok=[&](const std::string& u){
+        if(cfg.allow_http&&origin(u)==origin(cfg.opensubtitles_base))return true;
+        if(u.rfind("https://",0)!=0)return false;
+        std::string h=origin(u).substr(8);const size_t at=h.find('@');if(at!=std::string::npos)return false;
+        const size_t colon=h.find(':');if(colon!=std::string::npos)h=h.substr(0,colon);
+        static const std::string d="opensubtitles.com";
+        return h==d||(h.size()>d.size()&&h.compare(h.size()-d.size()-1,d.size()+1,"."+d)==0);};
+    Reply r;
+    for(int hop=0;hop<4;++hop){
+        r=http(cfg,url,post,headers,false);
+        const bool moved=r.status==301||r.status==302||r.status==303||r.status==307||r.status==308;
+        if(!moved||r.redirect.empty()||!host_ok(r.redirect))return r;
+        url=r.redirect;}
+    return r;}
 std::string http_problem(const Reply& r,const char* who){
     if(!r.error.empty())return std::string(who)+": "+r.error;
+    if(r.status>=300&&r.status<400)return std::string(who)+": redireccion no permitida (HTTP "+std::to_string(r.status)+")";
     if(r.status==401||r.status==403)return std::string(who)+": clave o usuario no validos";
     if(r.status==429)return std::string(who)+": limite de consultas alcanzado";
     if(r.status==406)return std::string(who)+": limite de descargas diarias alcanzado";
@@ -177,7 +198,7 @@ bool SubtitleSearch::login(std::string& error){
     if(!token_.empty()||config_.opensubtitles_user.empty()||config_.opensubtitles_password.empty())return true;
     Json body={{"username",config_.opensubtitles_user},{"password",config_.opensubtitles_password}};
     const std::string payload=body.dump();
-    const Reply r=http(config_,config_.opensubtitles_base+"/login",&payload,{"Api-Key: "+config_.opensubtitles_key,"Content-Type: application/json","Accept: application/json"},false);
+    const Reply r=os_http(config_,config_.opensubtitles_base+"/login",&payload,{"Api-Key: "+config_.opensubtitles_key,"Content-Type: application/json","Accept: application/json"});
     if(!r.error.empty()||r.status!=200){error=http_problem(r,"OpenSubtitles (inicio de sesion)");return false;}
     Json j=Json::parse(r.body,nullptr,false);token_=str(j,"token");
     if(token_.empty()||token_.find_first_of("\r\n")!=std::string::npos){token_.clear();error="OpenSubtitles: respuesta de inicio de sesion invalida";return false;}
@@ -187,12 +208,12 @@ bool SubtitleSearch::search_opensubtitles(const SubtitleQuery& q,std::vector<Sub
     // Parametros en minuscula y orden alfabetico (lo pide la API para aprovechar su cache).
     std::string url=config_.opensubtitles_base+"/subtitles?";
     if(q.episode>0)url+="episode_number="+std::to_string(q.episode)+"&";
-    url+="languages="+url_encode(join(config_.languages,","))+"&query="+url_encode(lq);
+    url+="languages="+join(config_.languages,",")+"&query="+url_encode(lq);
     if(q.episode>0)url+=(q.season>0?"&season_number="+std::to_string(q.season):std::string())+"&type=episode";else url+="&type=movie";
     if(q.year>0&&q.episode==0)url+="&year="+std::to_string(q.year);
     std::vector<std::string> headers={"Api-Key: "+config_.opensubtitles_key,"Accept: application/json"};
     std::string note;
-    Reply r=http(config_,url,nullptr,headers,false);
+    Reply r=os_http(config_,url,nullptr,headers);
     if(!r.error.empty()||r.status!=200){error=http_problem(r,"OpenSubtitles");return false;}
     Json j=Json::parse(r.body,nullptr,false);
     if(!j.is_object()||!j.contains("data")||!j["data"].is_array()){error="OpenSubtitles: respuesta inesperada";return false;}
@@ -262,7 +283,7 @@ bool SubtitleSearch::fetch(const SubtitleHit& hit,std::string& data,std::string&
         Json body={{"file_id",std::strtoll(hit.id.c_str(),nullptr,10)}};const std::string payload=body.dump();
         std::vector<std::string> headers={"Api-Key: "+config_.opensubtitles_key,"Content-Type: application/json","Accept: application/json"};
         if(!token_.empty())headers.push_back("Authorization: Bearer "+token_);
-        Reply r=http(config_,config_.opensubtitles_base+"/download",&payload,headers,false);
+        Reply r=os_http(config_,config_.opensubtitles_base+"/download",&payload,headers);
         if(!r.error.empty()||r.status!=200){error=http_problem(r,"OpenSubtitles");return false;}
         Json j=Json::parse(r.body,nullptr,false);const std::string link=str(j,"link");
         if(link.empty()){error="OpenSubtitles: no entrego el enlace de descarga.";return false;}
