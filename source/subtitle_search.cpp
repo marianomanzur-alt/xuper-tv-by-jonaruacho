@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -33,6 +34,7 @@ std::string join(const std::vector<std::string>& v,const char* sep,bool up=false
     std::string out;for(size_t i=0;i<v.size();++i){if(i)out+=sep;std::string x=v[i];if(up)for(char& c:x)c=static_cast<char>(std::toupper(static_cast<unsigned char>(c)));out+=x;}return out;}
 struct Reply {long status=0;std::string body;std::string error;std::string redirect;};
 struct Sink {std::string data;bool big=false;};
+int progress(void* user,curl_off_t,curl_off_t,curl_off_t,curl_off_t){const auto* c=static_cast<const std::atomic<bool>*>(user);return c&&c->load()?1:0;}
 size_t sink(char* p,size_t s,size_t n,void* u){auto* b=static_cast<Sink*>(u);const size_t bytes=s*n;
     if(b->data.size()+bytes>kMaxBody){b->big=true;return 0;}b->data.append(p,bytes);return bytes;}
 // Una peticion. Las que llevan claves nunca siguen redirecciones (no se reenvian a otro servidor).
@@ -56,6 +58,7 @@ Reply http(const SubtitleSearchConfig& cfg,const std::string& url,const std::str
     curl_easy_setopt(curl,CURLOPT_PROTOCOLS,protos);curl_easy_setopt(curl,CURLOPT_REDIR_PROTOCOLS,protos);
 #endif
     curl_easy_setopt(curl,CURLOPT_USERAGENT,kAgent);
+    if(cfg.cancel){curl_easy_setopt(curl,CURLOPT_NOPROGRESS,0L);curl_easy_setopt(curl,CURLOPT_XFERINFOFUNCTION,progress);curl_easy_setopt(curl,CURLOPT_XFERINFODATA,cfg.cancel);}
     curl_easy_setopt(curl,CURLOPT_WRITEFUNCTION,sink);curl_easy_setopt(curl,CURLOPT_WRITEDATA,&out);
     if(!cfg.ca_file.empty())curl_easy_setopt(curl,CURLOPT_CAINFO,cfg.ca_file.c_str());
     if(post){curl_easy_setopt(curl,CURLOPT_POSTFIELDS,post->data());curl_easy_setopt(curl,CURLOPT_POSTFIELDSIZE_LARGE,static_cast<curl_off_t>(post->size()));}
@@ -63,7 +66,7 @@ Reply http(const SubtitleSearchConfig& cfg,const std::string& url,const std::str
     const CURLcode rc=curl_easy_perform(curl);curl_easy_getinfo(curl,CURLINFO_RESPONSE_CODE,&reply.status);
     {char* loc=nullptr;if(curl_easy_getinfo(curl,CURLINFO_REDIRECT_URL,&loc)==CURLE_OK&&loc)reply.redirect=loc;}
     curl_slist_free_all(list);curl_easy_cleanup(curl);
-    if(rc!=CURLE_OK)reply.error=out.big?"Respuesta demasiado grande.":std::string("Conexion: ")+curl_easy_strerror(rc);
+    if(rc!=CURLE_OK)reply.error=out.big?"Respuesta demasiado grande.":rc==CURLE_ABORTED_BY_CALLBACK?"Cancelado.":std::string("Conexion: ")+curl_easy_strerror(rc);
     reply.body=std::move(out.data);return reply;}
 // Peticiones a OpenSubtitles: si responde con una redireccion (p. ej. 301 hacia la forma
 // canonica de la consulta) se repite UNA vez por vez, solo hacia un dominio opensubtitles.com
@@ -96,6 +99,26 @@ int lang_rank(const SubtitleSearchConfig& c,const std::string& l){
     for(size_t i=0;i<c.languages.size();++i)if(lower(c.languages[i])==l)return static_cast<int>(i);return 99;}
 std::string clip(const std::string& s,size_t n){if(s.size()<=n)return s;size_t cut=n;while(cut>0&&(static_cast<unsigned char>(s[cut])&0xC0)==0x80)--cut;return s.substr(0,cut)+"...";}
 std::string clean_label(const std::string& s){std::string o;for(unsigned char c:s)o+=(c<32||c==127)?' ':static_cast<char>(c);return o;}
+std::string fps_text(double v){char b[16];std::snprintf(b,sizeof(b),"%.3f",v);std::string s=b;while(!s.empty()&&s.back()=='0')s.pop_back();if(!s.empty()&&s.back()=='.')s.pop_back();return s;}
+bool has_word(const std::string& text,const char* word){
+    // Palabra completa (no letras alrededor), sin mayusculas: "web" en "Show.WEB-DL" si, en "cobweb" no.
+    const std::string t=lower(text),w=word;size_t at=0;
+    while((at=t.find(w,at))!=std::string::npos){
+        const bool left=at==0||!std::isalnum(static_cast<unsigned char>(t[at-1])),right=at+w.size()>=t.size()||!std::isalnum(static_cast<unsigned char>(t[at+w.size()]));
+        if(left&&right)return true;at+=w.size();}
+    return false;}
+// Cuanto se parece este subtitulo al video que se esta viendo (solo con lo que se sabe de el).
+int score_hit(const SubtitleHit& h,const SubtitleContext& c){
+    int score=0;
+    if(c.fps>0&&h.fps>0){const double d=std::fabs(c.fps-h.fps);if(d<=0.1)score+=40;else if(d>0.5)score-=30;}
+    // Los videos vienen de un servicio de streaming: las versiones WEB suelen coincidir en tiempos.
+    const std::string rel=h.release;
+    if(has_word(rel,"web")||has_word(rel,"webrip")||has_word(rel,"web-dl")||has_word(rel,"webdl")||has_word(rel,"amzn")||has_word(rel,"nf")||has_word(rel,"dsnp")||has_word(rel,"hmax")||has_word(rel,"atvp"))score+=15;
+    if(h.trusted)score+=20;
+    if(h.machine)score-=25;
+    if(h.hearing_impaired)score-=10;
+    if(h.downloads>0)score+=std::min(15,static_cast<int>(std::log10(h.downloads+1.0)*4));
+    return score;}
 uint32_t le32(const unsigned char* p){return p[0]|(p[1]<<8)|(p[2]<<16)|(static_cast<uint32_t>(p[3])<<24);}
 uint16_t le16(const unsigned char* p){return static_cast<uint16_t>(p[0]|(p[1]<<8));}
 }
@@ -110,6 +133,7 @@ bool load_subtitle_config(const std::string& path,SubtitleSearchConfig& config,s
     if(it!=j.end()&&it->is_array()){std::vector<std::string> langs;
         for(const auto& v:*it)if(v.is_string()){const std::string l=lower(v.get<std::string>());if(lang_ok(l)&&langs.size()<6)langs.push_back(l);}
         if(!langs.empty())config.languages=langs;}
+    {auto ab=j.find("auto_buscar");if(ab!=j.end()&&ab->is_boolean())config.auto_default=ab->get<bool>();}
     auto os=j.find("opensubtitles");
     if(os!=j.end()&&os->is_object()){config.opensubtitles_key=str(*os,"api_key");config.opensubtitles_user=str(*os,"usuario");config.opensubtitles_password=str(*os,"clave");}
     auto sd=j.find("subdl");
@@ -194,6 +218,58 @@ bool extract_subtitle_zip(const std::string& zip,std::string& data,std::string& 
     if(rc!=Z_STREAM_END||produced!=c.usize){data.clear();error="No se pudo descomprimir el subtitulo.";return false;}
     return true;}
 
+
+namespace {
+void put_utf8(std::string& out,uint32_t c){
+    if(c<0x80)out+=static_cast<char>(c);
+    else if(c<0x800){out+=static_cast<char>(0xC0|(c>>6));out+=static_cast<char>(0x80|(c&0x3F));}
+    else if(c<0x10000){out+=static_cast<char>(0xE0|(c>>12));out+=static_cast<char>(0x80|((c>>6)&0x3F));out+=static_cast<char>(0x80|(c&0x3F));}
+    else{out+=static_cast<char>(0xF0|(c>>18));out+=static_cast<char>(0x80|((c>>12)&0x3F));out+=static_cast<char>(0x80|((c>>6)&0x3F));out+=static_cast<char>(0x80|(c&0x3F));}}
+bool valid_utf8(const std::string& s){
+    size_t i=0;while(i<s.size()){const unsigned char c=static_cast<unsigned char>(s[i]);size_t n=c<0x80?1:(c>>5)==6?2:(c>>4)==14?3:(c>>3)==30?4:0;
+        if(n==0||i+n>s.size())return false;for(size_t k=1;k<n;++k)if((static_cast<unsigned char>(s[i+k])&0xC0)!=0x80)return false;i+=n;}
+    return true;}
+double parse_stamp(const std::string& s,size_t at){
+    // hh:mm:ss,mmm o hh:mm:ss.mmm (o mm:ss.mmm)
+    int part[3]={0,0,0};int count=0;size_t i=at;while(i<s.size()&&s[i]==' ')++i;
+    int value=0;bool any=false;double frac=0;
+    for(;i<s.size();++i){const char c=s[i];
+        if(std::isdigit(static_cast<unsigned char>(c))){value=value*10+(c-'0');any=true;}
+        else if(c==':'&&any&&count<2){part[count++]=value;value=0;any=false;}
+        else if((c==','||c=='.')&&any){size_t j=i+1;double scale=0.1;while(j<s.size()&&std::isdigit(static_cast<unsigned char>(s[j]))){frac+=(s[j]-'0')*scale;scale/=10;++j;}break;}
+        else break;}
+    part[count++]=value;
+    const double h=count==3?part[0]:0,m=count==3?part[1]:part[0],sec=count==3?part[2]:part[1];
+    return h*3600+m*60+sec+frac;}
+}
+bool normalize_subtitle(std::string& data,SubtitleInfo& info,std::string& error){
+    info={};
+    if(data.size()<8){error="El subtitulo esta vacio.";return false;}
+    const auto* b=reinterpret_cast<const unsigned char*>(data.data());
+    std::string text;
+    if(data.size()>=2&&((b[0]==0xFF&&b[1]==0xFE)||(b[0]==0xFE&&b[1]==0xFF))){
+        const bool le=b[0]==0xFF;
+        for(size_t i=2;i+1<data.size();i+=2){uint32_t u=le?(b[i]|(b[i+1]<<8)):((b[i]<<8)|b[i+1]);
+            if(u>=0xD800&&u<0xDC00&&i+3<data.size()){uint32_t lo=le?(b[i+2]|(b[i+3]<<8)):((b[i+2]<<8)|b[i+3]);
+                if(lo>=0xDC00&&lo<0xE000){u=0x10000+((u-0xD800)<<10)+(lo-0xDC00);i+=2;}}
+            put_utf8(text,u);}
+    }else{
+        size_t start=(data.size()>=3&&b[0]==0xEF&&b[1]==0xBB&&b[2]==0xBF)?3:0;
+        text=data.substr(start);
+        if(!valid_utf8(text)){   // Latin-1 / cp1252 (muy comun en espanol)
+            static const uint16_t cp[32]={0x20AC,0x81,0x201A,0x192,0x201E,0x2026,0x2020,0x2021,0x2C6,0x2030,0x160,0x2039,0x152,0x8D,0x17D,0x8F,0x90,0x2018,0x2019,0x201C,0x201D,0x2022,0x2013,0x2014,0x2DC,0x2122,0x161,0x203A,0x153,0x9D,0x17E,0x178};
+            std::string conv;for(unsigned char c:text)put_utf8(conv,(c>=0x80&&c<0xA0)?cp[c-0x80]:c);text=std::move(conv);}}
+    for(char& c:text)if(c=='\0')c=' ';
+    const bool ass=text.find("[Script Info]")!=std::string::npos||text.find("[Events]")!=std::string::npos;
+    size_t pos=0;
+    while(pos<text.size()){
+        size_t end=text.find('\n',pos);if(end==std::string::npos)end=text.size();
+        const size_t arrow=text.find("-->",pos);
+        if(!ass&&arrow!=std::string::npos&&arrow<end){++info.cues;info.last_end=std::max(info.last_end,parse_stamp(text,arrow+3));}
+        else if(ass&&text.compare(pos,9,"Dialogue:")==0)++info.cues;
+        pos=end+1;}
+    if(info.cues==0){error="Ese archivo no tiene subtitulos validos. Prueba con otro resultado.";return false;}
+    data=std::move(text);return true;}
 bool SubtitleSearch::login(std::string& error){
     if(!token_.empty()||config_.opensubtitles_user.empty()||config_.opensubtitles_password.empty())return true;
     Json body={{"username",config_.opensubtitles_user},{"password",config_.opensubtitles_password}};
@@ -224,8 +300,12 @@ bool SubtitleSearch::search_opensubtitles(const SubtitleQuery& q,std::vector<Sub
         const Json& f=(*files)[0];const std::string id=str(f,"file_id");if(id.empty()||id.size()>20||!std::all_of(id.begin(),id.end(),[](unsigned char c){return std::isdigit(c)!=0;}))continue;
         SubtitleHit h;h.provider="OpenSubtitles";h.language=lang;h.id=id;h.downloads=static_cast<int>(std::min<long>(num(*at,"download_count"),1000000000));
         const std::string rel=clean_label(str(*at,"release"));std::string name=rel.empty()?clean_label(str(f,"file_name")):rel;if(name.empty())name="(sin nombre)";
+        {auto fp=at->find("fps");if(fp!=at->end()&&fp->is_number()){const double v=fp->get<double>();if(v>5&&v<130)h.fps=v;}
+         auto flag=[&](const char* k){auto x=at->find(k);return x!=at->end()&&x->is_boolean()&&x->get<bool>();};
+         h.trusted=flag("from_trusted");h.hearing_impaired=flag("hearing_impaired");h.machine=flag("machine_translated")||flag("ai_translated");}
         auto fd=at->find("feature_details");if(fd!=at->end()){h.season=static_cast<int>(num(*fd,"season_number"));h.episode=static_cast<int>(num(*fd,"episode_number"));}
-        h.label=clean_label("[OS] "+std::string(1,static_cast<char>(std::toupper(static_cast<unsigned char>(lang[0]))))+lang.substr(1)+"  "+clip(name,70)+"  ("+std::to_string(h.downloads)+")");
+        h.release=name;
+        h.label=clean_label("[OS] "+std::string(1,static_cast<char>(std::toupper(static_cast<unsigned char>(lang[0]))))+lang.substr(1)+"  "+clip(name,60)+(h.fps>0?"  "+fps_text(h.fps)+"fps":"")+(h.hearing_impaired?"  [sordos]":"")+(h.machine?"  [auto-traducido]":"")+"  ("+std::to_string(h.downloads)+")");
         hits.push_back(std::move(h));}
     return true;}
 bool SubtitleSearch::search_subdl(const SubtitleQuery& q,std::vector<SubtitleHit>& hits,std::string& error){
@@ -252,10 +332,33 @@ bool SubtitleSearch::search_subdl(const SubtitleQuery& q,std::vector<SubtitleHit
         SubtitleHit h;h.provider="SubDL";h.language=lang;h.id=p;
         h.season=static_cast<int>(num(s,"season"));h.episode=static_cast<int>(num(s,"episode"));
         h.downloads=0;std::string name=clean_label(str(s,"release_name"));if(name.empty())name=clean_label(str(s,"name"));
+        {auto hi=s.find("hi");h.hearing_impaired=hi!=s.end()&&hi->is_boolean()&&hi->get<bool>();}
+        h.release=name;
         h.label=clean_label("[SubDL] "+std::string(1,static_cast<char>(std::toupper(static_cast<unsigned char>(lang[0]))))+lang.substr(1)+"  "+clip(name,70));
         hits.push_back(std::move(h));}
     return true;}
-bool SubtitleSearch::search(const SubtitleQuery& q,std::vector<SubtitleHit>& hits,std::string& error){
+bool SubtitleSearch::search(const SubtitleQuery& q,std::vector<SubtitleHit>& hits,std::string& error,const SubtitleContext& ctx,const std::atomic<bool>* cancel){
+    std::lock_guard<std::mutex> lock(mutex_);config_.cancel=cancel;
+    const bool ok=search_unlocked(q,hits,error,ctx);config_.cancel=nullptr;return ok;}
+bool SubtitleSearch::auto_fetch(const SubtitleQuery& q,const SubtitleContext& ctx,SubtitleHit& chosen,std::string& data,std::string& error,const std::atomic<bool>* cancel){
+    std::lock_guard<std::mutex> lock(mutex_);config_.cancel=cancel;
+    struct Reset{SubtitleSearchConfig& c;~Reset(){c.cancel=nullptr;}} reset{config_};
+    std::vector<SubtitleHit> hits;
+    if(!search_unlocked(q,hits,error,ctx))return false;
+    std::string last="Ningun subtitulo coincide con la duracion del video.";int tried=0;
+    for(const auto& h:hits){
+        if(cancel&&cancel->load()){error="Cancelado.";return false;}
+        if(tried>=3)break;++tried;
+        std::string text,why;
+        if(!fetch_unlocked(h,text,why)){
+            // Limite diario o clave mala: probar mas candidatos solo gasta cupo.
+            error=why;return false;}
+        SubtitleInfo info;
+        if(!normalize_subtitle(text,info,why)){last=why;continue;}
+        if(ctx.duration>0&&(info.last_end>ctx.duration+90||info.last_end<ctx.duration*0.5)){last="Los subtitulos encontrados no coinciden con la duracion de este video.";continue;}
+        chosen=h;data=std::move(text);return true;}
+    error=last;return false;}
+bool SubtitleSearch::search_unlocked(const SubtitleQuery& q,std::vector<SubtitleHit>& hits,std::string& error,const SubtitleContext& ctx){
     hits.clear();notes_.clear();used_.clear();error.clear();
     if(q.title.empty()){error="No hay titulo para buscar.";return false;}
     if(!config_.any_provider()){error="Faltan las claves de busqueda. Mira LEEME-SUBTITULOS.txt";return false;}
@@ -267,15 +370,19 @@ bool SubtitleSearch::search(const SubtitleQuery& q,std::vector<SubtitleHit>& hit
         // Episodio: se descartan los que declaran otro capitulo (los que no lo declaran se conservan).
         if(q.episode>0)found.erase(std::remove_if(found.begin(),found.end(),[&](const SubtitleHit& h){return (h.episode>0&&h.episode!=q.episode)||(q.season>0&&h.season>0&&h.season!=q.season);}),found.end());
         if(ok&&!found.empty()){
+            for(auto& h:found)h.score=score_hit(h,ctx);
             std::stable_sort(found.begin(),found.end(),[&](const SubtitleHit& a,const SubtitleHit& b){
-                const int ra=lang_rank(config_,a.language),rb=lang_rank(config_,b.language);return ra!=rb?ra<rb:a.downloads>b.downloads;});
+                const int ra=lang_rank(config_,a.language),rb=lang_rank(config_,b.language);return ra!=rb?ra<rb:(a.score!=b.score?a.score>b.score:a.downloads>b.downloads);});
             if(found.size()>40)found.resize(40);
             hits=std::move(found);used_=step==0?"OpenSubtitles":"SubDL";return true;}
         notes_.push_back(ok?std::string(step==0?"OpenSubtitles":"SubDL")+": sin resultados":problem);}
     error=notes_.empty()?"Sin resultados.":notes_.back();
     if(notes_.size()>1)error=notes_[0]+" | "+notes_[1];
     return false;}
-bool SubtitleSearch::fetch(const SubtitleHit& hit,std::string& data,std::string& error){
+bool SubtitleSearch::fetch(const SubtitleHit& hit,std::string& data,std::string& error,const std::atomic<bool>* cancel){
+    std::lock_guard<std::mutex> lock(mutex_);config_.cancel=cancel;
+    const bool ok=fetch_unlocked(hit,data,error);config_.cancel=nullptr;return ok;}
+bool SubtitleSearch::fetch_unlocked(const SubtitleHit& hit,std::string& data,std::string& error){
     data.clear();
     if(hit.provider=="OpenSubtitles"){
         if(config_.opensubtitles_key.empty()||hit.id.empty()){error="Falta la clave de OpenSubtitles.";return false;}

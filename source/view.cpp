@@ -100,14 +100,14 @@ void View::draw(const Catalog& c,size_t selected,const std::string& status,bool 
         text(x+10,y+art_h+10,e.title,white,w-20,poster||channel?small:font,poster?47:channel?43:60);
         if(!poster&&!channel){const std::string note=badge&&(e.kind==EntryKind::Episode||e.kind==EntryKind::Offline)?badge(e):std::string();
             text(x+12,y+h-25,note.empty()?std::string(label(e.kind,e.program_type)):note,note.empty()?muted:note.rfind("ERROR",0)==0?gold:accent,w-24,small,22);}
-        if(chosen&&favorite&&channel){rect({x+w-44,y+9,32,28},accent);text(x+w-38,y+8,"*",{10,25,30,255},26,font);}
+        if(chosen&&favorite&&(channel||poster)){rect({x+w-44,y+9,32,28},accent);text(x+w-38,y+8,"*",{10,25,30,255},26,font);}
     }
-    if(c.entries.empty())text(280,200,c.title=="Favoritos"?"Tus canales favoritos apareceran aqui.\nSelecciona un canal y pulsa el stick derecho para guardarlo.":c.title=="Descargas"?"Aun no tienes descargas.\nAbre una pelicula o serie, elige el episodio y pulsa ZR\npara guardarlo en la SD y verlo sin conexion.":"No hay contenido para mostrar.",muted,850,font,150);
+    if(c.entries.empty())text(280,200,c.title=="Favoritos"?"Tus favoritos apareceran aqui.\nSelecciona un canal, serie o pelicula y pulsa el stick derecho para guardarlo.":c.title=="Descargas"?"Aun no tienes descargas.\nAbre una pelicula o serie, elige el episodio y pulsa ZR\npara guardarlo en la SD y verlo sin conexion.":"No hay contenido para mostrar.",muted,850,font,150);
     rect({260,631,1000,1},{34,47,66,255});
     text(280,642,status,muted,940,small,30);
     text(280,681,c.title=="Descargas"?"A Reproducir   ZR Borrar / cancelar   B Volver   Y Inicio   L/R Pagina   + Salir":
          "A Abrir   B Volver   X Buscar   Y Inicio   R3 Favorito   ZR Descargar   L/R Pagina   + Salir",white,970,small,24);
-    if(!c.entries.empty()&&c.entries[selected].kind==EntryKind::Channel){rect({1080,103,145,26},panel);text(1090,105,favorite?"Quitar favorito":"+ Favorito",accent,140,small,24);}
+    if(!c.entries.empty()&&(c.entries[selected].kind==EntryKind::Channel||c.entries[selected].kind==EntryKind::Asset)){rect({1080,103,145,26},panel);text(1090,105,favorite?"Quitar favorito":"+ Favorito",accent,140,small,24);}
     else if(!c.entries.empty())text(1130,108,std::to_string(selected+1)+" / "+std::to_string(c.entries.size()),muted,120,small,24);
     SDL_RenderPresent(renderer);
 }

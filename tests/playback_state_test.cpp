@@ -36,6 +36,12 @@ int main(){
         assert(prefs.save("ep1",30,1,100,true,false));
         xs::PlaybackHistory again(path);
         assert(std::abs(again.sub_scale-1.4)<1e-9&&again.quality==2&&again.alang=="eng"&&again.slang=="spa");
+        prefs.variant_label="720p / japanese";prefs.service_sub="Espanol";assert(prefs.save("ep1",30,1,100,true,false));
+        {xs::PlaybackHistory third(path);assert(third.variant_label=="720p / japanese"&&third.service_sub=="Espanol");}
+        {std::ofstream file(path);file<<R"({"variant_label":"x\u0001y","service_sub":123})";}
+        {xs::PlaybackHistory hostile(path);assert(hostile.variant_label.empty()&&hostile.service_sub.empty());}
+        {xs::PlaybackHistory again2(path);(void)again2;}
+        assert(prefs.save("ep1",30,1,100,true,false));
         assert(again.subtitle_for("ep1")=="sdmc:/subs/serieA.S01E01.srt"&&again.series_hint("serieA")=="sdmc:/subs/serieA.S01E01.srt");
         assert(again.subtitle_for("ep2")=="sdmc:/subs/pelicula.srt"&&again.series_hint("")=="");
         again.remember_subtitle("ep1","serieA","");assert(again.subtitle_for("ep1").empty()&&!again.series_hint("serieA").empty());

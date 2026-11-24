@@ -9,8 +9,10 @@
 #include <cstdlib>
 #include <vector>
 #include <fstream>
+#include <atomic>
 static void key(SDL_Keycode key){SDL_Event event{};event.type=SDL_KEYDOWN;event.key.keysym.sym=key;assert(SDL_PushEvent(&event)==1);std::this_thread::sleep_for(std::chrono::milliseconds(150));}
 static void wait(int n){std::this_thread::sleep_for(std::chrono::milliseconds(n));}
+static std::atomic<int> auto_calls{0};static std::atomic<bool> auto_cancel_seen{false};
 int main(int argc,char** argv){
     if(argc!=2)return 2;
     xs::trace_reset();xs::View view;std::string error;assert(view.open(error));
@@ -18,7 +20,7 @@ int main(int argc,char** argv){
     options.variants={"720p / Espanol","1080p / Ingles"};options.items={"Episodio 1","Episodio 2"};options.start=2;
     options.subtitles={"Espanol externo"};options.subtitle_loader=[](size_t,std::string& data,std::string&){data="1\n00:00:00,000 --> 00:00:25,000\nSubtitulo externo verificado\n";return true;};
     auto* renderer=view.renderer;
-    for(int scenario=0;scenario<15;++scenario){
+    for(int scenario=0;scenario<22;++scenario){
         xs::PlaybackOutcome result;
         std::thread input([scenario]{wait(600);
             if(scenario==0){key(SDLK_SPACE);wait(200);key(SDLK_SPACE);wait(200);key(SDLK_y);wait(150);key(SDLK_s);wait(150);key(SDLK_RIGHTBRACKET);wait(150);key(SDLK_f);wait(150);key(SDLK_RIGHT);wait(200);key(SDLK_LEFT);wait(200);key(SDLK_x);wait(300);key(SDLK_ESCAPE);wait(100);key(SDLK_ESCAPE);}
@@ -29,15 +31,20 @@ int main(int argc,char** argv){
             if(scenario==6){key(SDLK_x);wait(100);for(int i=0;i<17;++i){key(SDLK_DOWN);wait(25);}key(SDLK_RETURN);wait(100);key(SDLK_ESCAPE);wait(50);key(SDLK_ESCAPE);}
             if(scenario==12||scenario==13){key(SDLK_x);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(400);key(SDLK_RETURN);wait(400);key(SDLK_ESCAPE);wait(100);key(SDLK_ESCAPE);}
             if(scenario==14){key(SDLK_x);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(400);key(SDLK_ESCAPE);wait(100);key(SDLK_ESCAPE);}
+            if(scenario==17){key(SDLK_x);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(100);for(int i=0;i<3;++i){key(SDLK_DOWN);wait(50);}key(SDLK_RETURN);wait(1200);key(SDLK_ESCAPE);wait(100);key(SDLK_ESCAPE);}
+            if(scenario==20){wait(1500);key(SDLK_ESCAPE);}
+            if(scenario==21){wait(1500);key(SDLK_x);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(150);key(SDLK_RETURN);wait(300);key(SDLK_ESCAPE);wait(100);key(SDLK_ESCAPE);}
+            if(scenario==15||scenario==16||scenario==18||scenario==19){wait(1500);key(SDLK_ESCAPE);}
             if(scenario==8){key(SDLK_x);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(100);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(200);key(SDLK_DOWN);wait(50);key(SDLK_RETURN);wait(300);key(SDLK_ESCAPE);}
             if(scenario==9){wait(400);key(SDLK_ESCAPE);}
             if(scenario==10){key(SDLK_x);wait(100);for(int i=0;i<18;++i){key(SDLK_DOWN);wait(25);}key(SDLK_RETURN);wait(300);key(SDLK_ESCAPE);wait(50);key(SDLK_ESCAPE);}
             if(scenario==11){wait(500);SDL_Event tap{};tap.type=SDL_FINGERDOWN;tap.tfinger.x=768.0f/1280;tap.tfinger.y=631.0f/720;SDL_PushEvent(&tap);wait(600);key(SDLK_ESCAPE);}
             if(scenario==7){key(SDLK_x);wait(100);for(int i=0;i<7;++i){key(SDLK_DOWN);wait(25);}key(SDLK_LEFT);wait(50);key(SDLK_DOWN);wait(25);key(SDLK_DOWN);wait(25);key(SDLK_RIGHT);wait(25);key(SDLK_DOWN);wait(25);key(SDLK_RIGHT);wait(25);key(SDLK_DOWN);wait(25);key(SDLK_RIGHT);wait(100);key(SDLK_ESCAPE);wait(50);key(SDLK_ESCAPE);}
         });
-        options.online_search=nullptr;options.online_loader=nullptr;
+        options.service_subtitle_pref=scenario==20||scenario==21?"espanol externo":"";
+        options.online_search=nullptr;options.online_loader=nullptr;options.auto_subtitle=nullptr;options.auto_subtitles=false;options.auto_skip_lang.clear();
         if(scenario>=12){
-            options.online_search=[scenario](std::vector<std::string>& labels,std::string& problem){
+            options.online_search=[scenario](const xs::MediaInfo&,std::vector<std::string>& labels,std::string& problem){
                 if(scenario==14){problem="OpenSubtitles: sin resultados | SubDL: sin resultados";return false;}
                 labels={"[OS] Es  Show.S01E02  (500)","[SubDL] En  Show"};return true;};
             options.online_loader=[scenario](size_t i,std::string& data,std::string& saved){
@@ -45,6 +52,17 @@ int main(int argc,char** argv){
                 data="1\n00:00:00,000 --> 00:00:25,000\nSubtitulo de internet\n";
                 if(scenario==12){std::ofstream("/tmp/xs_online_sub.srt",std::ios::binary|std::ios::trunc)<<data;saved="/tmp/xs_online_sub.srt";}
                 return true;};}
+        if(scenario>=15){
+            auto_calls=0;auto_cancel_seen=false;
+            options.auto_subtitles=scenario!=17;options.auto_skip_lang=scenario==19?"es":"";
+            options.auto_subtitle=[scenario](const xs::MediaInfo& media,const std::atomic<bool>& cancel,std::string& label,std::string& path,std::string& message){
+                ++auto_calls;
+                if(scenario==16){while(!cancel)std::this_thread::sleep_for(std::chrono::milliseconds(20));auto_cancel_seen=true;message="Cancelado.";return false;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                if(scenario==18){message="OpenSubtitles: sin resultados | SubDL: sin resultados";return false;}
+                if(media.duration<20||media.duration>40){message="duracion inesperada";return false;}
+                std::ofstream("/tmp/xs_auto_sub.srt",std::ios::binary|std::ios::trunc)<<"1\n00:00:00,000 --> 00:00:25,000\nSubtitulo automatico\n";
+                path="/tmp/xs_auto_sub.srt";label="[OS] Es  Show.S01E02.WEB  23.976fps";return true;};}
         options.subtitle_file=scenario==9?"./subtitulos/ejemplo.srt":"";options.quality=scenario==9?2:0;options.start=scenario==11?0:2;
         error=xs::play(argv[1],renderer,{},options,&result);input.join();
         if(!error.empty())std::cerr<<error<<'\n';
@@ -65,6 +83,13 @@ int main(int argc,char** argv){
         if(scenario==12){assert(result.subtitle_file=="/tmp/xs_online_sub.srt");assert(result.subtitle==2);}
         if(scenario==13){assert(result.subtitle_file.empty());assert(result.subtitle==2);}
         if(scenario==14){assert(result.subtitle_file.empty());assert(result.subtitle!=2);}
+        if(scenario==20){assert(result.service_subtitle=="Espanol externo");assert(result.subtitle==2);assert(result.subtitle_file.empty());}
+        if(scenario==21){assert(result.service_subtitle.empty());assert(result.slang=="none");}
+        if(scenario==15){assert(auto_calls==1);assert(result.subtitle_file=="/tmp/xs_auto_sub.srt");assert(result.subtitle==2);assert(result.auto_subtitles);}
+        if(scenario==16){assert(auto_calls==1);assert(auto_cancel_seen);assert(result.subtitle_file.empty());}
+        if(scenario==17){assert(auto_calls==1);assert(result.subtitle_file=="/tmp/xs_auto_sub.srt");assert(result.auto_subtitles);}
+        if(scenario==18){assert(auto_calls==1);assert(result.subtitle_file.empty());assert(result.auto_subtitles);}
+        if(scenario==19){assert(auto_calls==0);assert(result.subtitle_file.empty());}
         if(scenario==0)assert(result.alang=="eng");   // Y cambia a la pista en ingles y se recuerda su idioma
         std::cout<<"controls scenario "<<scenario<<" passed; aid="<<result.audio<<" sid="<<result.subtitle<<" speed="<<result.speed<<" position="<<result.position<<std::endl;
     }

@@ -15,6 +15,7 @@
 #include "download_manager.hpp"
 #include "offline_library.hpp"
 #include "subtitle_search.hpp"
+#include "variant_pick.hpp"
 #include <sys/stat.h>
 #include <cctype>
 #include <thread>
@@ -90,6 +91,13 @@ static xs::SubtitleQuery subtitle_query_for(const xs::Entry& entry,const std::st
     if(entry.series_id.empty()){own.title=show.title;if(!own.year)own.year=show.year;return own;}   // pelicula
     own.title=show.title;if(!own.season)own.season=show.season;if(!own.year)own.year=show.year;return own;
 }
+// Guarda el subtitulo (ya en UTF-8) en la SD con un nombre legible. Devuelve la ruta o "" si no pudo.
+static std::string save_subtitle_file(const std::string& base,const xs::SubtitleHit& hit,const std::string& data){
+    const std::string dir=subtitles_directory();mkdir(dir.c_str(),0777);
+    const std::string path=dir+"/"+base+"."+hit.language+"."+(hit.provider=="SubDL"?"SubDL":"OpenSubtitles")+".srt";
+    std::ofstream out(path,std::ios::binary|std::ios::trunc);out.write(data.data(),static_cast<std::streamsize>(data.size()));out.close();
+    return out?path:std::string();
+}
 static std::string safe_name(const std::string& text,size_t limit){
     std::string out;for(unsigned char c:text){if(std::isalnum(c)||c=='-'||c=='_')out+=static_cast<char>(c);else if(!out.empty()&&out.back()!='_')out+='_';if(out.size()>=limit)break;}
     while(!out.empty()&&out.back()=='_')out.pop_back();
@@ -137,6 +145,7 @@ int main(int argc,char** argv){
         downloads=std::make_unique<xs::DownloadManager>(config);}
     // Busqueda de subtitulos en internet (claves en subtitulos.json; ver LEEME-SUBTITULOS.txt).
     std::shared_ptr<xs::SubtitleSearch> subtitle_search;std::string subtitle_search_problem;
+    std::vector<std::string> subtitle_languages;bool config_auto_default=false;
     {xs::SubtitleSearchConfig sconfig;
 #ifdef __SWITCH__
         sconfig.ca_file="sdmc:/switch/xuperswitch/cacert.pem";
@@ -145,6 +154,7 @@ int main(int argc,char** argv){
         const std::string spath="subtitulos.json";
 #endif
         xs::load_subtitle_config(spath,sconfig,subtitle_search_problem);
+        subtitle_languages=sconfig.languages;config_auto_default=sconfig.auto_default;
         subtitle_search=std::make_shared<xs::SubtitleSearch>(std::move(sconfig));}
     view.badge=[&](const xs::Entry& e){return e.content_id.empty()?std::string():downloads->status_text(e.content_id);};
     std::string confirm_delete;Uint32 last_tick=0;bool keep_awake=false;(void)keep_awake;
@@ -302,9 +312,10 @@ int main(int argc,char** argv){
         }
         if(toggle_favorite&&!catalog.entries.empty()){
             const auto entry=catalog.entries[selected];
-            if(entry.kind!=xs::EntryKind::Channel)status="Selecciona un canal para guardarlo en Favoritos.";
+            if(!xs::SavedCatalog::can_favorite(entry))status="Selecciona un canal, serie o pelicula para guardarlo en Favoritos.";
             else if(!saved.toggle(entry))status="No se pudo guardar Favoritos en la SD.";
-            else{status=saved.contains(entry)?"Canal guardado en Favoritos.":"Canal quitado de Favoritos.";if(catalog.title=="Favoritos"){catalog.entries=saved.favorites;selected=catalog.entries.empty()?0:std::min(selected,catalog.entries.size()-1);}}
+            else{const char* what=entry.kind==xs::EntryKind::Channel?"Canal":entry.program_type=="0"?"Serie":"Pelicula";
+                status=std::string(what)+(saved.contains(entry)?" guardado en Favoritos.":" quitado de Favoritos.");if(catalog.title=="Favoritos"){catalog.entries=saved.favorites;selected=catalog.entries.empty()?0:std::min(selected,catalog.entries.size()-1);}}
             redraw=true;
         }
         if(download_one||download_rest){
@@ -391,7 +402,7 @@ int main(int argc,char** argv){
                     if(result.ok){history.emplace_back(std::move(catalog),selected);catalog=std::move(result.catalog);selected=0;}
                 }else if(!full_memory)status="Abre hbmenu manteniendo R sobre un juego para probar el video.";
                 else{
-                    int variant=0;double start=0,speed=playback_history.speed,volume=playback_history.volume;bool auto_next=playback_history.auto_next,keep_paused=false;
+                    int variant=0;bool variant_pinned=false;double start=0,speed=playback_history.speed,volume=playback_history.volume;bool auto_next=playback_history.auto_next,keep_paused=false;
                     std::vector<size_t> queue;
                     for(size_t i=0;i<catalog.entries.size();++i)if(catalog.entries[i].kind==entry.kind&&(entry.series_id.empty()||catalog.entries[i].series_id==entry.series_id)&&(entry.kind!=xs::EntryKind::Offline||!catalog.entries[i].source.empty()))queue.push_back(i);
                     bool continue_playback=true;
@@ -400,7 +411,7 @@ int main(int argc,char** argv){
                         xs::PlaybackOptions options;options.font=view.font;options.title=current.title;
                         options.variant=variant;options.start=start>0?start:(current.kind==xs::EntryKind::Episode||current.kind==xs::EntryKind::Offline)?playback_history.position(current.content_id):0;options.speed=speed;options.volume=volume;options.auto_next=auto_next;options.paused=keep_paused;
                         options.sub_scale=playback_history.sub_scale;options.quality=playback_history.quality;options.buffer_mb=full_memory?64:32;
-                        options.alang=playback_history.alang;options.slang=playback_history.slang;
+                        options.alang=playback_history.alang;options.slang=playback_history.slang;options.service_subtitle_pref=playback_history.service_sub;
                         {const std::string& series_key=current.series_id.empty()?current.content_id:current.series_id;
                          if(current.kind==xs::EntryKind::Episode||current.kind==xs::EntryKind::Offline){options.subtitle_file=playback_history.subtitle_for(current.content_id);options.subtitle_hint=playback_history.series_hint(series_key);}}
                         // Si el contenido esta guardado en la SD se reproduce desde ahi (sin red ni consumo de datos).
@@ -421,6 +432,11 @@ int main(int argc,char** argv){
                         if(current.kind==xs::EntryKind::Channel||current.kind==xs::EntryKind::Episode){
                             status="Solicitando fuente del video...";view.draw(catalog,selected,status,full_memory);
                             xs::SourceResult result;xs::trace("catalog:source_begin");load([&]{result=xs::service_source(session,current,variant);},"Preparando reproduccion...");status=result.status;
+                            // Misma fuente (calidad / idioma de audio) que elegiste antes, si este capitulo la ofrece.
+                            if(result.ok&&!variant_pinned&&variant==0&&current.kind==xs::EntryKind::Episode){
+                                const int wanted=xs::pick_variant(result.variants,playback_history.variant_label);
+                                if(wanted>0){xs::SourceResult again;load([&]{again=xs::service_source(session,current,wanted);},"Aplicando tu fuente preferida...");
+                                    if(again.ok){result=std::move(again);variant=wanted;options.variant=variant;status=result.status;}}}
                             xs::trace(result.ok?"catalog:source_received":"catalog:source_unavailable");
                             source=result.ok?std::move(result.source):"";headers=std::move(result.headers);options.variants=std::move(result.variants);
                             const auto subtitles=result.subtitles;
@@ -429,28 +445,39 @@ int main(int argc,char** argv){
                                 return i<subtitles.size()&&xs::service_subtitle(session,subtitles[i],data,error);
                             };
                         }
-                        // Buscar subtitulos en internet (menu Subtitulos del reproductor).
+                        // Buscar subtitulos en internet (manual desde el menu y automatico al abrir el video).
                         if(subtitle_search&&(current.kind==xs::EntryKind::Episode||current.kind==xs::EntryKind::Offline||current.kind==xs::EntryKind::Media)){
                             auto hits=std::make_shared<std::vector<xs::SubtitleHit>>();
                             const xs::SubtitleQuery query=subtitle_query_for(current,catalog.title);
-                            const std::string file_base=safe_name(current.content_id.empty()?query.title:current.content_id,40);
+                            std::string readable=safe_name(query.title.empty()?current.title:query.title,40);
+                            if(query.episode>0)readable+=(query.season>0?"_S"+std::to_string(query.season):std::string())+"_E"+std::to_string(query.episode);
+                            const std::string file_base=readable;
                             const std::string problem_at_start=subtitle_search_problem;
-                            options.online_search=[subtitle_search,hits,query,problem_at_start](std::vector<std::string>& labels,std::string& error){
+                            options.online_search=[subtitle_search,hits,query,problem_at_start](const xs::MediaInfo& media,std::vector<std::string>& labels,std::string& error){
                                 if(!problem_at_start.empty()){error=problem_at_start;return false;}
-                                if(!subtitle_search->search(query,*hits,error))return false;
+                                xs::SubtitleContext context;context.fps=media.fps;context.duration=media.duration;
+                                if(!subtitle_search->search(query,*hits,error,context))return false;
                                 for(const auto& h:*hits)labels.push_back(h.label);
                                 return true;};
                             options.online_loader=[subtitle_search,hits,file_base](size_t i,std::string& data,std::string& saved_or_error){
                                 if(i>=hits->size()){saved_or_error="Subtitulo no disponible.";return false;}
                                 std::string error;
                                 if(!subtitle_search->fetch((*hits)[i],data,error)){saved_or_error=error;return false;}
-                                // Se guarda en la SD: asi queda para la proxima vez (y para los videos descargados).
-                                const std::string dir=subtitles_directory();mkdir(dir.c_str(),0777);
-                                const auto& h=(*hits)[i];
-                                const std::string path=dir+"/"+file_base+"."+h.language+"."+(h.provider=="SubDL"?"subdl":"os")+".srt";
-                                std::ofstream out(path,std::ios::binary|std::ios::trunc);out.write(data.data(),static_cast<std::streamsize>(data.size()));out.close();
-                                saved_or_error=out?path:std::string();   // vacio: el reproductor usa un temporal
-                                return true;};}
+                                // UTF-8 limpio y validado: si el archivo viene vacio, roto o en otra codificacion se corrige aqui.
+                                xs::SubtitleInfo info;if(!xs::normalize_subtitle(data,info,error)){saved_or_error=error;return false;}
+                                saved_or_error=save_subtitle_file(file_base,(*hits)[i],data);   // vacio: el reproductor usa un temporal
+                                return true;};
+                            // Automatico: interruptor recordado; si nunca se toco, vale "auto_buscar" de subtitulos.json.
+                            options.auto_subtitles=playback_history.auto_subs<0?config_auto_default:playback_history.auto_subs==1;
+                            options.auto_skip_lang=subtitle_languages.empty()?std::string():subtitle_languages[0];
+                            options.auto_subtitle=[subtitle_search,query,file_base,problem_at_start](const xs::MediaInfo& media,const std::atomic<bool>& cancel,std::string& label,std::string& path,std::string& message){
+                                if(!problem_at_start.empty()){message=problem_at_start;return false;}
+                                xs::SubtitleContext context;context.fps=media.fps;context.duration=media.duration;
+                                xs::SubtitleHit chosen;std::string data,error;
+                                if(!subtitle_search->auto_fetch(query,context,chosen,data,error,&cancel)){message=error;return false;}
+                                path=save_subtitle_file(file_base,chosen,data);
+                                if(path.empty()){message="No se pudo guardar el subtitulo en la SD.";return false;}
+                                label=chosen.label;return true;};}
                         for(size_t i=0;i<queue.size();++i){options.items.push_back(catalog.entries[queue[i]].title);if(queue[i]==selected)options.item=static_cast<int>(i);}
                         if(!source.empty()){
                             xs::PlaybackOutcome outcome;
@@ -459,7 +486,9 @@ int main(int argc,char** argv){
                             downloads->set_paused(false);keep_awake=false;  // play() libera el estado de reproduccion al cerrar
                             speed=outcome.speed;volume=outcome.volume;auto_next=outcome.auto_next;
                             if(status.empty()){ // si la reproduccion fallo, outcome no es confiable
-                                playback_history.sub_scale=outcome.sub_scale;playback_history.quality=outcome.quality;
+                                playback_history.sub_scale=outcome.sub_scale;playback_history.quality=outcome.quality;if(options.auto_subtitle)playback_history.auto_subs=outcome.auto_subtitles?1:0;
+                                playback_history.service_sub=outcome.service_subtitle;
+                                if(outcome.next_variant>=0&&static_cast<size_t>(outcome.next_variant)<options.variants.size())playback_history.variant_label=xs::variant_key(options.variants[static_cast<size_t>(outcome.next_variant)]);
                                 if(!outcome.alang.empty()&&xs::PlaybackHistory::lang_ok(outcome.alang))playback_history.alang=outcome.alang;
                                 if(!outcome.slang.empty()&&xs::PlaybackHistory::lang_ok(outcome.slang))playback_history.slang=outcome.slang;
                                 if(current.kind==xs::EntryKind::Episode||current.kind==xs::EntryKind::Offline)playback_history.remember_subtitle(current.content_id,current.series_id.empty()?current.content_id:current.series_id,outcome.subtitle_file);
@@ -471,9 +500,9 @@ int main(int argc,char** argv){
                             }
                             if(status.empty()&&!playback_history.save((current.kind==xs::EntryKind::Episode||current.kind==xs::EntryKind::Offline)?current.content_id:"",outcome.position,outcome.speed,outcome.volume,outcome.auto_next,outcome.ended))xs::trace((std::string("play:history_save_failed stage=")+playback_history.last_error).c_str());
                             if(outcome.ended&&auto_next&&!current.series_id.empty()&&static_cast<size_t>(options.item+1)<queue.size())outcome.next_item=options.item+1;
-                            if(outcome.next_variant>=0){variant=outcome.next_variant;start=outcome.position;keep_paused=outcome.paused;continue_playback=true;}
+                            if(outcome.next_variant>=0){variant=outcome.next_variant;variant_pinned=true;start=outcome.position;keep_paused=outcome.paused;continue_playback=true;}
                             else if(outcome.next_item>=0&&static_cast<size_t>(outcome.next_item)<queue.size()){
-                                selected=queue[outcome.next_item];variant=0;start=0;keep_paused=false;continue_playback=true;
+                                selected=queue[outcome.next_item];variant=0;variant_pinned=false;start=0;keep_paused=false;continue_playback=true;
                             }
                             if(status.empty())status="Video finalizado. A: reproducir; X: buscar.";
                         }

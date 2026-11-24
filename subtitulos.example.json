@@ -1,5 +1,6 @@
 {
   "idiomas": ["es", "en"],
+  "auto_buscar": false,
   "opensubtitles": {
     "api_key": "PEGA_AQUI_LA_CLAVE_DE_OPENSUBTITLES",
     "usuario": "",

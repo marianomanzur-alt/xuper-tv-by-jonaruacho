@@ -24,6 +24,8 @@ struct PlaybackHistory {
     // Preferencias que se recuerdan entre videos: tamano de subtitulos, calidad de imagen
     // (0..2), idioma preferido de audio/subtitulos y el archivo .srt elegido por contenido.
     double sub_scale=1;int quality=0;std::string alang,slang;
+    std::string variant_label,service_sub;   // fuente (calidad / audio) y subtitulo del servicio elegidos la ultima vez
+    int auto_subs=-1;              // subtitulos automaticos: -1 sin elegir, 0 apagado, 1 encendido
     Json subtitle_files=Json::object(),series_subtitles=Json::object();
     static bool lang_ok(const std::string& v){
         if(v.size()<2||v.size()>8)return false;
@@ -74,6 +76,14 @@ struct PlaybackHistory {
         if(j.contains("sub_scale")&&j["sub_scale"].is_number())sub_scale=std::clamp(j["sub_scale"].get<double>(),0.5,3.0);
         if(j.contains("quality")&&j["quality"].is_number_integer())quality=std::clamp(j["quality"].get<int>(),0,2);
         if(j.contains("alang")&&j["alang"].is_string()&&lang_ok(j["alang"].get<std::string>()))alang=j["alang"].get<std::string>();
+        auto clean_label=[](const Json& v,std::string& out){
+            if(!v.is_string())return;
+            const std::string t=v.get<std::string>();
+            if(t.size()>80||std::any_of(t.begin(),t.end(),[](unsigned char c){return c<32||c==127;}))return;
+            out=t;};
+        if(j.contains("variant_label")){clean_label(j["variant_label"],variant_label);}
+        if(j.contains("service_sub")){clean_label(j["service_sub"],service_sub);}
+        if(j.contains("auto_subs")&&j["auto_subs"].is_number_integer())auto_subs=std::clamp(j["auto_subs"].get<int>(),-1,1);
         if(j.contains("slang")&&j["slang"].is_string()&&lang_ok(j["slang"].get<std::string>()))slang=j["slang"].get<std::string>();
         if(j.contains("subtitle_files"))subtitle_files=clean_paths(j["subtitle_files"]);
         if(j.contains("series_subtitles"))series_subtitles=clean_paths(j["series_subtitles"]);
@@ -88,7 +98,7 @@ struct PlaybackHistory {
         if(!id.empty()&&id.size()<=512){if(ended)positions.erase(id);else if(std::isfinite(position_value)&&position_value>5&&position_value<86400)positions[id]=position_value;else if(position_value>=0&&position_value<=5)positions.erase(id);}
         while(positions.size()>500)positions.erase(positions.begin());
         const std::string temp=path+".tmp";std::ofstream file(temp,std::ios::trunc);
-        file<<Json({{"positions",positions},{"speed",speed},{"volume",volume},{"auto_next",auto_next},{"sub_scale",sub_scale},{"quality",quality},{"alang",alang},{"slang",slang},{"subtitle_files",subtitle_files},{"series_subtitles",series_subtitles}}).dump();file.close();
+        file<<Json({{"positions",positions},{"speed",speed},{"volume",volume},{"auto_next",auto_next},{"sub_scale",sub_scale},{"quality",quality},{"alang",alang},{"slang",slang},{"auto_subs",auto_subs},{"variant_label",variant_label},{"service_sub",service_sub},{"subtitle_files",subtitle_files},{"series_subtitles",series_subtitles}}).dump();file.close();
         if(!file.good()){last_error="write";return false;}
         const std::string backup=path+".bak";
         // FAT may not support replacing an existing destination by rename.

@@ -5,7 +5,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PROBE = sys.argv[1]
 SRT = "1\n00:00:01,000 --> 00:00:02,000\nHola mundo\n"
-state = {"os_mode": "ok", "sd_mode": "ok", "log": []}
+state = {"os_mode": "ok", "sd_mode": "ok", "log": [], "downloads": [], "ends": {}}
+def srt_ending(seconds):
+    h, m, sec = int(seconds // 3600), int(seconds // 60 % 60), int(seconds % 60)
+    return "1\n00:00:01,000 --> 00:00:02,000\nHola mundo\n\n2\n%02d:%02d:%02d,000 --> %02d:%02d:%02d,500\nFin\n" % (h, m, sec, h, m, sec)
 
 def make_zip(files, method=zipfile.ZIP_DEFLATED):
     buf = io.BytesIO()
@@ -29,7 +32,9 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/os/download":
             if state["os_mode"] == "quota": return self.reply(406, {"message": "limit"})
             port = self.server.server_address[1]
-            return self.reply(200, {"link": f"http://127.0.0.1:{port}/files/a.srt", "remaining": 4})
+            fid = json.loads(body).get("file_id")
+            state["downloads"].append(fid)
+            return self.reply(200, {"link": f"http://127.0.0.1:{port}/files/{fid}.srt", "remaining": 4})
         self.reply(404, {})
     def do_GET(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
@@ -47,15 +52,17 @@ class H(BaseHTTPRequestHandler):
             if m == "empty": return self.reply(200, {"data": []})
             if m == "junk": return self.reply(200, b"<html>x</html>", "text/html")
             data = [
-                {"id": "1", "attributes": {"language": "en", "download_count": 900, "release": "Show.S01E02.1080p", "files": [{"file_id": 111, "file_name": "a.srt"}], "feature_details": {"season_number": 1, "episode_number": 2}}},
-                {"id": "2", "attributes": {"language": "es", "download_count": 50, "release": "Show.S01E02.WEB", "files": [{"file_id": 222, "file_name": "b.srt"}], "feature_details": {"season_number": 1, "episode_number": 2}}},
-                {"id": "3", "attributes": {"language": "es", "download_count": 500, "release": "Show.S01E02.HDTV", "files": [{"file_id": 333, "file_name": "c.srt"}], "feature_details": {"season_number": 1, "episode_number": 2}}},
+                {"id": "1", "attributes": {"language": "en", "download_count": 900, "fps": 23.976, "release": "Show.S01E02.1080p", "files": [{"file_id": 111, "file_name": "a.srt"}], "feature_details": {"season_number": 1, "episode_number": 2}}},
+                {"id": "2", "attributes": {"language": "es", "download_count": 50, "fps": 23.976, "release": "Show.S01E02.WEB", "files": [{"file_id": 222, "file_name": "b.srt"}], "feature_details": {"season_number": 1, "episode_number": 2}}},
+                {"id": "3", "attributes": {"language": "es", "download_count": 500, "fps": 25, "hearing_impaired": True, "release": "Show.S01E02.HDTV", "files": [{"file_id": 333, "file_name": "c.srt"}], "feature_details": {"season_number": 1, "episode_number": 2}}},
                 {"id": "4", "attributes": {"language": "es", "download_count": 9999, "release": "Show.S01E09", "files": [{"file_id": 444, "file_name": "d.srt"}], "feature_details": {"season_number": 1, "episode_number": 9}}},
                 {"id": "5", "attributes": {"language": "es", "files": [{"file_id": "../x"}]}},
                 {"id": "6", "attributes": {"language": "fr", "download_count": 1, "files": [{"file_id": 666}]}},
             ]
             return self.reply(200, {"data": data})
-        if u.path == "/files/a.srt": return self.reply(200, SRT.encode(), "text/plain")
+        if u.path.startswith("/files/"):
+            fid = int(u.path.split("/")[-1].split(".")[0])
+            return self.reply(200, srt_ending(state["ends"].get(fid, 2000)).encode(), "text/plain")
         if u.path == "/sd/subtitles":
             m = state["sd_mode"]
             if m == "empty": return self.reply(200, {"status": True, "results": [], "subtitles": []})
@@ -117,26 +124,87 @@ check("zip enorme se rechaza", "error=" in run("zip", big.name))
 trunc = make_zip([("c.srt", SRT * 50)]); t5 = tempfile.NamedTemporaryFile(suffix=".zip", delete=False); t5.write(trunc[:len(trunc) // 2]); t5.close()
 check("zip truncado no revienta", "error=" in run("zip", t5.name))
 
+# --- normalizar codificacion
+def norm(raw, name="n.srt"):
+    f = tempfile.NamedTemporaryFile(suffix=".srt", delete=False); f.write(raw); f.close(); return run("normalize", f.name)
+body = "1\n00:00:01,000 --> 00:00:03,500\nCañón niño\n\n2\n00:01:00,000 --> 00:42:10,250\nOtra línea\n"
+o = norm(body.encode("utf-8")); check("utf-8 normal", "cues=2" in o and "last=2530.2" in o and "Cañón" in o, o)
+o = norm(b"\xef\xbb\xbf" + body.encode("utf-8")); check("utf-8 con BOM", "cues=2" in o and "Cañón" in o, o)
+o = norm(body.encode("cp1252")); check("cp1252/latin-1 se convierte", "cues=2" in o and "Cañón" in o, o)
+o = norm(b"\xff\xfe" + body.encode("utf-16-le")); check("utf-16 LE con BOM", "cues=2" in o and "Cañón" in o, o)
+o = norm(b"\xfe\xff" + body.encode("utf-16-be")); check("utf-16 BE con BOM", "cues=2" in o and "Cañón" in o, o)
+o = norm(b"<html><body>Too many requests</body></html>"); check("html se rechaza", "error=" in o, o)
+o = norm(b"[Script Info]\n[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hola\n"); check("ass con Dialogue", "cues=1" in o, o)
+o = norm(b"1\n"); check("archivo vacio", "error=" in o, o)
+
 # --- OpenSubtitles primero
 state["os_mode"] = "ok"; state["sd_mode"] = "ok"
 out = search("os,sd")
 check("OS: usa OpenSubtitles", "used=OpenSubtitles" in out and "search=1" in out, out)
 hits = [l for l in out.splitlines() if l.startswith("hit ")]
 check("OS: descarta episodio equivocado y ids raros", len(hits) == 3 and not any("S01E09" in h for h in hits), hits)
-check("OS: espanol antes que ingles, luego por descargas", [h.split("|")[1] for h in hits] == ["es", "es", "en"] and "HDTV" in hits[0], hits)
-check("OS: fetch ok", "fetch=1" in out and f"size={len(SRT)}" in out and "first=[1]" in out, out)
+check("OS: espanol antes que ingles", [h.split("|")[1] for h in hits] == ["es", "es", "en"], hits)
+check("OS: fetch ok", "fetch=1" in out and "first=[1]" in out, out)
 gets = [e for e in state["log"] if e[1].startswith("/os/subtitles")]
 check("OS: cabeceras Api-Key y User-Agent", gets and gets[0][2].get("Api-Key") == "OSKEY" and "XuperSwitch" in gets[0][2].get("User-Agent", ""), gets and gets[0][2])
 q = urllib.parse.parse_qs(urllib.parse.urlparse(gets[0][1]).query)
 check("OS: parametros", q.get("query") == ["show"] and q.get("season_number") == ["1"] and q.get("episode_number") == ["2"] and q.get("type") == ["episode"] and q.get("languages") == ["es,en"], q)
 dl = [e for e in state["log"] if e[1] == "/os/download"]
-check("OS: login y token en la descarga", dl and dl[0][2].get("Authorization") == "Bearer JWT123" and json.loads(dl[0][3]) == {"file_id": 333}, dl and (dl[0][2], dl[0][3]))
-filed = [e for e in state["log"] if e[1] == "/files/a.srt"]
+check("OS: login y token en la descarga", dl and dl[0][2].get("Authorization") == "Bearer JWT123" and json.loads(dl[0][3]) == {"file_id": 222}, dl and (dl[0][2], dl[0][3]))
+filed = [e for e in state["log"] if e[1].startswith("/files/")]
 check("OS: el enlace temporal se pide sin claves", filed and "Api-Key" not in filed[0][2] and "Authorization" not in filed[0][2], filed and filed[0][2])
 out = search("nologin")
 dl = [e for e in state["log"] if e[1] == "/os/download"]
 check("OS sin usuario: descarga sin Authorization", "fetch=1" in out and dl and "Authorization" not in dl[0][2], out)
-check("OS: elegir otro resultado", "file_id\": 222" in json.dumps(json.loads(search("os", idx=1) and [e for e in state["log"] if e[1] == "/os/download"][0][3])).replace('"file_id": 222', 'file_id": 222'), state["log"][-3:])
+search("os", idx=1)
+check("OS: elegir otro resultado", json.loads([e for e in state["log"] if e[1] == "/os/download"][0][3]) == {"file_id": 333}, state["log"][-3:])
+
+
+# --- parecido con el video y busqueda automatica
+def auto(keys="os,sd", fps=None, dur=None, cancel=False):
+    state["log"].clear(); state["downloads"].clear()
+    env = dict(os.environ, XS_AUTO="1")
+    if fps: env["XS_FPS"] = str(fps)
+    if dur: env["XS_DUR"] = str(dur)
+    if cancel: env["XS_CANCEL"] = "1"
+    return subprocess.run([PROBE, "search", str(port), keys, "Show", "1", "2"], capture_output=True, text=True, timeout=60, env=env).stdout
+def ranked(fps=None):
+    env = dict(os.environ)
+    if fps: env["XS_FPS"] = str(fps)
+    state["log"].clear()
+    out = subprocess.run([PROBE, "search", str(port), "os", "Show", "1", "2"], capture_output=True, text=True, timeout=60, env=env).stdout
+    return [l for l in out.splitlines() if l.startswith("hit ")]
+state["os_mode"] = "ok"; state["sd_mode"] = "ok"; state["ends"] = {}
+r = ranked(23.976)
+check("ranking: con 23.976 fps gana la version WEB de ese fps sobre la de 25 fps", "WEB" in r[0] and "HDTV" in r[1], r)
+r = ranked(25)
+check("ranking: con 25 fps la de 25 fps sube", r[0].split("|")[0:2] == ["hit OpenSubtitles", "es"] and "HDTV" in r[0] or "WEB" in r[0], r)
+check("ranking: la etiqueta muestra fps y sordos", "23.976fps" in ranked(23.976)[0] and "[sordos]" in "".join(ranked(25)), ranked(25))
+state["ends"] = {222: 2480, 333: 2490, 111: 2470}
+out = auto(fps=23.976, dur=2500)
+check("auto: elige el mejor y su duracion cuadra", "auto=1" in out and "id=222" in out and state["downloads"] == [222], (out, state["downloads"]))
+state["ends"] = {222: 900, 333: 2490, 111: 2470}
+out = auto(fps=23.976, dur=2500)
+check("auto: descarta el que no cuadra con la duracion y prueba el siguiente", "auto=1" in out and "id=333" in out and state["downloads"] == [222, 333], (out, state["downloads"]))
+state["ends"] = {222: 900, 333: 800, 111: 700}
+out = auto(fps=23.976, dur=2500)
+check("auto: ninguno cuadra -> no carga nada", "auto=0" in out and "duracion" in out and len(state["downloads"]) <= 3, (out, state["downloads"]))
+state["ends"] = {222: 5000, 333: 5000, 111: 5000}
+out = auto(fps=23.976, dur=2500)
+check("auto: subtitulo mucho mas largo que el video tambien se rechaza", "auto=0" in out, out)
+state["ends"] = {}
+out = auto()
+check("auto sin datos del video: toma el primero", "auto=1" in out and len(state["downloads"]) == 1, (out, state["downloads"]))
+state["os_mode"] = "quota"; state["ends"] = {222: 2480}
+out = auto(fps=23.976, dur=2500)
+check("auto: limite diario corta sin gastar mas cupo", "auto=0" in out and "limite de descargas" in out and len([e for e in state["log"] if e[1] == "/os/download"]) == 1, (out, state["log"][-3:]))
+state["os_mode"] = "empty"
+out = auto()
+check("auto: respaldo a SubDL", "auto=1" in out and "SubDL" in out, out)
+state["os_mode"] = "ok"
+out = auto(fps=23.976, dur=2500, cancel=True)
+check("auto: cancelar corta de inmediato", "auto=0" in out and "Cancelado" in out and not state["downloads"], out)
+state["ends"] = {}
 
 # --- respaldo
 for mode in ("empty", "401", "429", "junk"):

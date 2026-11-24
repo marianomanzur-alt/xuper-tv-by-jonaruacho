@@ -4,8 +4,11 @@
 #include <utility>
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include <atomic>
 #include <functional>
 namespace xs {
+// Datos del video en curso para comparar subtitulos (0 = desconocido).
+struct MediaInfo {double fps=0,duration=0;int height=0;};
 struct PlaybackOptions {
     TTF_Font* font=nullptr;
     std::string title;
@@ -13,8 +16,14 @@ struct PlaybackOptions {
     std::vector<std::string> subtitles;
     std::function<bool(size_t,std::string&,std::string&)> subtitle_loader;
     // Busqueda de subtitulos en internet: online_search llena las etiquetas; online_loader baja la elegida.
-    std::function<bool(std::vector<std::string>&,std::string&)> online_search;
+    std::function<bool(const MediaInfo&,std::vector<std::string>&,std::string&)> online_search;
     std::function<bool(size_t,std::string&,std::string&)> online_loader;
+    // Busqueda automatica al abrir el video (en segundo plano). Devuelve en 'path' un archivo
+    // de subtitulos ya guardado; debe respetar 'cancel' y volver pronto cuando se activa.
+    std::string service_subtitle_pref;   // subtitulo del servicio elegido la ultima vez (se vuelve a cargar solo)
+    bool auto_subtitles=false;
+    std::string auto_skip_lang;    // idioma preferido (p. ej. "es"): si el video ya trae una pista asi, no se busca
+    std::function<bool(const MediaInfo&,const std::atomic<bool>& cancel,std::string& label,std::string& path,std::string& message)> auto_subtitle;
     int variant=0,item=0;
     double start=0;
     double speed=1,volume=100;
@@ -36,6 +45,8 @@ struct PlaybackOutcome {
     bool ended=false,paused=false;
     bool auto_next=true;
     int quality=0;
+    std::string service_subtitle;  // subtitulo del servicio activo por eleccion del usuario (vacio: ninguno)
+    bool auto_subtitles=false;     // estado final del interruptor de subtitulos automaticos
     std::string alang,slang;       // idioma de las pistas internas elegidas (vacio: sin cambios)
     std::string subtitle_file;     // archivo externo activo al salir (vacio: ninguno)
 };

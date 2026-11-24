@@ -8,6 +8,27 @@ la lista (A) y se descarga y se activa. Queda guardado en la SD, en
 y la app lo vuelve a cargar solo la proxima vez que veas ese episodio o pelicula
 (tambien si lo tienes descargado en Descargas).
 
+BUSQUEDA AUTOMATICA (opcional)
+  Menu > Subtitulos > "Subtitulos automaticos: Si/No" la enciende o apaga (se recuerda).
+  Tambien puedes dejarla encendida de entrada con  "auto_buscar": true  en subtitulos.json
+  (solo vale hasta la primera vez que uses el interruptor del menu).
+  Al abrir un video que no tiene subtitulo guardado ni una pista en tu primer idioma
+  de "idiomas", la app busca sola, en segundo plano (el video no se detiene), y carga el
+  mejor candidato. Aparece un aviso arriba: "Subtitulo automatico: ...".
+  Como elige entre las versiones: no conoce el nombre exacto de tu video, asi que compara
+    - idioma: primero el primero de "idiomas" (espanol) y solo si no hay, el siguiente (ingles);
+    - fps: prefiere los que coinciden con los fotogramas por segundo de tu video;
+    - origen: prefiere versiones WEB (las de streaming), las de usuarios de confianza,
+      y descarta o baja a las auto-traducidas y a las "para sordos";
+    - duracion: descarga el mejor y comprueba que el subtitulo termine cerca del final del
+      video; si no cuadra, prueba el siguiente (maximo 3 descargas por video).
+  Si ninguno cuadra no carga nada y lo avisa; puedes elegir a mano en el mismo menu
+  (la lista manual usa el mismo orden, con el fps de cada uno).
+  Ojo con el cupo: cada intento automatico gasta descargas de tu cuota diaria (OpenSubtitles
+  sin usuario: 5 por dia). Con usuario y clave en el archivo tienes mas. Un video con
+  subtitulo ya guardado no vuelve a buscar.
+  Audio: la app ya recuerda el idioma de audio que elegiste y lo pone en los videos siguientes.
+
 FUENTES (se prueban en este orden; si una no tiene nada o falla, pasa a la otra)
   1. OpenSubtitles  (opensubtitles.com)
   2. SubDL          (subdl.com)

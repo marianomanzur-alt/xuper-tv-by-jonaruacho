@@ -4,7 +4,7 @@ MBEDTLS_CFLAGS ?=
 MBEDTLS_LIBS ?= -lmbedcrypto
 CURL_CFLAGS ?=
 CURL_LIBS ?= -lcurl
-.PHONY: test-subtitles test test-service test-ranger test-state test-downloads test-offline player clean
+.PHONY: test-variants test-subtitles test test-service test-ranger test-state test-downloads test-offline player clean
 test:
 	@mkdir -p build-host
 	$(CXX) $(CXXFLAGS) source/catalog.cpp tests/catalog_test.cpp -o build-host/catalog_test
@@ -73,3 +73,8 @@ test-subtitles:
 	@mkdir -p build-host
 	$(CXX) $(CXXFLAGS) $(CURL_CFLAGS) source/subtitle_search.cpp tests/subtitle_probe.cpp $(CURL_LIBS) -lz -o build-host/subtitle_probe
 	python3 tests/test_subtitles.py build-host/subtitle_probe
+
+test-variants:
+	@mkdir -p build-host
+	$(CXX) $(CXXFLAGS) tests/variant_pick_test.cpp -o build-host/variant_pick_test
+	./build-host/variant_pick_test
